@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Calavera parlante</title>
+<style>
+:root{--ui:#c9bfa6;--panel:#14100c;--line:#3a2e22}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:#000;color:var(--ui);font-family:system-ui,-apple-system,sans-serif;overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+body{background:radial-gradient(ellipse at 50% 40%,#1c120c 0%,#000 70%)}
+#stage{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px}
+#skull{position:relative;z-index:1;width:min(92vw,56vh);height:auto;-webkit-tap-highlight-color:transparent}
+#candle{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 46%,rgba(255,120,40,.16) 0%,rgba(255,80,20,.05) 35%,transparent 62%)}
+#fog{position:fixed;left:-25%;right:-25%;bottom:-8%;height:42%;z-index:2;pointer-events:none;background:radial-gradient(ellipse at 28% 78%,rgba(150,140,128,.20),transparent 58%),radial-gradient(ellipse at 72% 88%,rgba(150,140,128,.16),transparent 55%),radial-gradient(ellipse at 50% 100%,rgba(150,140,128,.14),transparent 60%);filter:blur(16px);animation:fog 16s ease-in-out infinite alternate}
+@keyframes fog{from{transform:translateX(-5%)}to{transform:translateX(5%)}}
+#sub{position:relative;z-index:3;min-height:3.2em;max-width:600px;text-align:center;font-size:1.15rem;line-height:1.4;color:#e9d9b8;text-shadow:0 0 8px #f40;margin-top:8px;padding:0 8px}
+#sub.hidden{visibility:hidden}
+#heard{position:relative;z-index:3;font-size:.85rem;opacity:.55;min-height:1.2em;text-align:center;margin-top:4px;max-width:600px}
+#heard.err{color:#ff7a6a;opacity:.9}
+#status{position:fixed;top:max(12px,env(safe-area-inset-top));left:0;right:0;text-align:center;font-size:.75rem;letter-spacing:.18em;text-transform:uppercase;opacity:.45}
+#bar{position:fixed;z-index:4;bottom:max(12px,env(safe-area-inset-bottom));left:0;right:0;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;padding:0 12px;opacity:0;pointer-events:none;transition:opacity .4s}
+#bar.show{opacity:1;pointer-events:auto}
+button{background:#1a1410;color:var(--ui);border:1px solid var(--line);border-radius:999px;padding:10px 16px;font-size:.9rem;font-family:inherit}
+button.on{border-color:#a33;color:#fbb;box-shadow:0 0 10px #a338}
+#unlock{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:5;text-align:center;padding:24px}
+#unlock h1{font-size:1.5rem;color:#e9d9b8;font-weight:600}
+#unlock p{opacity:.7;max-width:440px;line-height:1.4}
+#settings{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;z-index:10;overflow:auto;padding:16px}
+#settings.open{display:flex}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;width:100%;max-width:520px;display:grid;gap:10px;margin:auto}
+.panel h2{font-size:1.1rem;color:#e9d9b8}
+.panel h3{font-size:.75rem;text-transform:uppercase;letter-spacing:.12em;opacity:.6;margin-top:10px}
+label{display:grid;gap:4px;font-size:.85rem}
+input,select,textarea{background:#0b0907;color:#eee;border:1px solid var(--line);border-radius:8px;padding:8px;font-family:inherit;font-size:16px;width:100%}
+input[type=range]{padding:0}
+textarea{min-height:120px;resize:vertical}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.hint{font-size:.75rem;opacity:.55;line-height:1.35}
+.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
+</style>
+</head>
+<body>
+
+<div id="candle"></div>
+<div id="status">dormida</div>
+
+<div id="stage">
+<svg id="skull" viewBox="0 0 400 520" role="img" aria-label="Calavera">
+  <defs>
+    <radialGradient id="boneG" cx="40%" cy="28%" r="78%">
+      <stop offset="0" stop-color="#f3ead3"/><stop offset=".45" stop-color="#d9cba8"/>
+      <stop offset=".8" stop-color="#a8977a"/><stop offset="1" stop-color="#6e604a"/>
+    </radialGradient>
+    <linearGradient id="jawG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cdbf9e"/><stop offset=".6" stop-color="#a39276"/><stop offset="1" stop-color="#64563f"/>
+    </linearGradient>
+    <linearGradient id="toothG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfae86"/><stop offset=".35" stop-color="#ece1c4"/><stop offset="1" stop-color="#cdbb92"/>
+    </linearGradient>
+    <linearGradient id="lowToothG" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#a9976f"/><stop offset=".4" stop-color="#e6d9ba"/><stop offset="1" stop-color="#cdbb92"/>
+    </linearGradient>
+    <radialGradient id="socketG" cx="50%" cy="42%" r="62%">
+      <stop offset="0" stop-color="#000"/><stop offset=".55" stop-color="#050302"/>
+      <stop offset=".85" stop-color="#1f150d"/><stop offset="1" stop-color="#4a3826"/>
+    </radialGradient>
+    <radialGradient id="noseG" cx="50%" cy="60%" r="70%">
+      <stop offset="0" stop-color="#000"/><stop offset=".7" stop-color="#0c0806"/><stop offset="1" stop-color="#3a2a1b"/>
+    </radialGradient>
+    <radialGradient id="shadeG" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#2a1d10" stop-opacity=".55"/><stop offset="1" stop-color="#2a1d10" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="hiG" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fffaf0" stop-opacity=".55"/><stop offset="1" stop-color="#fffaf0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="emberG" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff2c8"/><stop offset=".25" stop-color="#ffb070"/>
+      <stop offset=".55" stop-color="#ff3a14"/><stop offset="1" stop-color="#ff2a10" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="eyeHaloG" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ff3010" stop-opacity=".55"/><stop offset=".5" stop-color="#ff2a10" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#ff2a10" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="spillG" cx="50%" cy="50%" r="50%">
+      <stop offset=".35" stop-color="#ff3a14" stop-opacity=".22"/><stop offset="1" stop-color="#ff3a14" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="craniumClip"><path d="M200 22 C118 22 56 78 52 168 C49 210 62 236 74 250 C72 262 76 276 88 286 C100 296 112 302 120 312 C126 322 130 332 134.0 341 Q139.5 333.7 145.0 341.7 Q151.0 333.6 157.0 341.7 Q163.5 333.5 170.0 341.9 Q177.0 333.6 184.0 340.9 Q192.0 333.7 200.0 341.2 Q208.0 333.5 216.0 341.3 Q223.0 332.9 230.0 341.0 Q236.5 332.9 243.0 341.0 Q249.0 332.2 255.0 341.7 Q260.5 333.6 266.0 342.0 C270 332 274 322 280 312 C288 302 300 296 312 286 C324 276 328 262 326 250 C338 236 351 210 348 168 C344 78 282 22 200 22 Z"/></clipPath>
+    <clipPath id="jawClip"><path d="M84 290 C80 330 86 380 104 414 C122 446 160 468 200 468 C240 468 278 446 296 414 C314 380 320 330 316 290 L290 300 C288 330 284 356 276 370 C274 380 270 382 262.0 381 Q256.5 389.4 251.0 380.8 Q245.0 389.5 239.0 380.2 Q233.0 389.4 227.0 380.7 Q220.5 388.4 214.0 380.3 Q207.0 389.0 200.0 380.4 Q193.0 388.9 186.0 380.9 Q179.5 388.8 173.0 380.2 Q167.0 389.0 161.0 380.4 Q155.0 388.5 149.0 380.3 Q143.5 388.7 138.0 380.1 C130 382 128 378 124 370 C116 356 112 330 110 300 Z"/></clipPath>
+    <!-- textura de hueso viejo: manchas + poros con relieve -->
+    <filter id="boneTex" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="3" seed="7" result="blot"/>
+      <feColorMatrix in="blot" type="matrix" values="0 0 0 0 0.30  0 0 0 0 0.21  0 0 0 0 0.12  0 0 0 -1.9 0.95" result="stain"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" seed="3" result="grain"/>
+      <feDiffuseLighting in="grain" surfaceScale="1.0" diffuseConstant="1.05" lighting-color="#ffffff" result="lit">
+        <feDistantLight azimuth="235" elevation="58"/>
+      </feDiffuseLighting>
+      <feComposite in="SourceGraphic" in2="lit" operator="arithmetic" k1="0.4" k2="0.62" k3="0" k4="0" result="grainy"/>
+      <feComposite in="stain" in2="grainy" operator="over" result="all"/>
+      <feComposite in="all" in2="SourceAlpha" operator="in"/>
+    </filter>
+  </defs>
+  <g id="head">
+    <rect x="124" y="330" width="152" height="100" rx="16" fill="#030201"/>
+    <g id="jaw">
+      <g fill="url(#lowToothG)" stroke="#4e4029" stroke-width="1.3" stroke-linejoin="round">
+        <path d="M138.8 396 L138.8 366.6 Q138.8 360.6 143.5 359.6 Q148.2 360.6 148.2 366.6 L148.2 396 Z"/><path d="M141.3 364.6 L141.3 380" stroke="#fffaf0" stroke-opacity=".3" stroke-width="1.4" fill="none"/><path d="M149.8 396 L149.8 363.4 Q149.8 357.4 155.0 356.4 Q160.2 357.4 160.2 363.4 L160.2 396 Z"/><path d="M152.6 361.4 L152.6 380" stroke="#fffaf0" stroke-opacity=".3" stroke-width="1.4" fill="none"/><path d="M173.8 396 L173.8 363.7 Q173.8 357.7 179.5 356.7 Q185.2 357.7 185.2 363.7 L185.2 396 Z"/><path d="M176.9 361.7 L176.9 380" stroke="#fffaf0" stroke-opacity=".3" stroke-width="1.4" fill="none"/><path d="M186.8 396 L186.8 364.2 Q186.8 358.2 193.0 357.2 Q199.2 358.2 199.2 364.2 L199.2 396 Z"/><path d="M190.2 362.2 L190.2 380" stroke="#fffaf0" stroke-opacity=".3" stroke-width="1.4" fill="none"/><path d="M200.8 396 L200.8 365.9 Q200.8 359.9 207.0 358.9 Q213.2 359.9 213.2 365.9 L213.2 396 Z"/><path d="M204.2 363.9 L204.2 380" stroke="#fffaf0" stroke-opacity=".3" stroke-width="1.4" fill="none"/><path d="M214.8 396 L214.8 364.9 Q214.8 358.9 220.5 357.9 Q226.2 358.9 226.2 364.9 L226.2 396 Z"/><path d="M217.9 362.9 L217.9 380" stroke="#fffaf0" stroke-opacity=".3" stroke-width="1.4" fill="none"/><path d="M227.8 396 L227.8 362.6 Q227.8 356.6 233.0 355.6 Q238.2 356.6 238.2 362.6 L238.2 396 Z"/><path d="M230.6 360.6 L230.6 380" stroke="#fffaf0" stroke-opacity=".3" stroke-width="1.4" fill="none"/><path d="M239.8 396 L239.8 363.6 Q239.8 357.6 245.0 356.6 Q250.2 357.6 250.2 363.6 L250.2 396 Z"/><path d="M242.6 361.6 L242.6 380" stroke="#fffaf0" stroke-opacity=".3" stroke-width="1.4" fill="none"/><path d="M251.8 396 L251.8 365.1 Q251.8 359.1 256.5 358.1 Q261.2 359.1 261.2 365.1 L261.2 396 Z"/><path d="M254.3 363.1 L254.3 380" stroke="#fffaf0" stroke-opacity=".3" stroke-width="1.4" fill="none"/>
+      </g>
+      <g filter="url(#boneTex)">
+        <path d="M84 290 C80 330 86 380 104 414 C122 446 160 468 200 468 C240 468 278 446 296 414 C314 380 320 330 316 290 L290 300 C288 330 284 356 276 370 C274 380 270 382 262.0 381 Q256.5 389.4 251.0 380.8 Q245.0 389.5 239.0 380.2 Q233.0 389.4 227.0 380.7 Q220.5 388.4 214.0 380.3 Q207.0 389.0 200.0 380.4 Q193.0 388.9 186.0 380.9 Q179.5 388.8 173.0 380.2 Q167.0 389.0 161.0 380.4 Q155.0 388.5 149.0 380.3 Q143.5 388.7 138.0 380.1 C130 382 128 378 124 370 C116 356 112 330 110 300 Z" fill="url(#jawG)" stroke="#4a3c28" stroke-width="1.6"/>
+        <g clip-path="url(#jawClip)">
+          <ellipse cx="200" cy="454" rx="38" ry="12" fill="url(#hiG)" opacity=".55"/>
+          <ellipse cx="100" cy="304" rx="30" ry="22" fill="url(#shadeG)"/>
+          <ellipse cx="300" cy="304" rx="30" ry="22" fill="url(#shadeG)"/>
+          <ellipse cx="110" cy="402" rx="22" ry="34" fill="url(#shadeG)"/>
+          <ellipse cx="290" cy="402" rx="22" ry="34" fill="url(#shadeG)"/>
+          <path d="M150 440 Q200 458 250 440" fill="none" stroke="#3a2c1c" stroke-opacity=".35" stroke-width="2.5"/>
+          <path d="M200 420 L200 446" stroke="#3a2c1c" stroke-opacity=".25" stroke-width="2"/>
+          <ellipse cx="152" cy="420" rx="3" ry="2.2" fill="#2a1d10" opacity=".7"/>
+          <ellipse cx="248" cy="420" rx="3" ry="2.2" fill="#2a1d10" opacity=".7"/>
+        </g>
+      </g>
+      <path d="M262 400 L254 414 L262 428" fill="none" stroke="#2b2014" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M262 400 L254 414 L262 428" transform="translate(1.2 1.2)" fill="none" stroke="#fff6e0" stroke-opacity=".25" stroke-width="0.8" stroke-linecap="round"/>
+    </g>
+    <g id="cranium">
+      <g fill="url(#toothG)" stroke="#4e4029" stroke-width="1.3" stroke-linejoin="round">
+        <path d="M134.8 328 L134.8 350.5 Q134.8 356.5 139.5 357.5 Q144.2 356.5 144.2 350.5 L144.2 328 Z"/><path d="M137.3 342 L137.3 351.5" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/><path d="M145.8 328 L145.8 354.2 Q145.8 360.2 151.0 361.2 Q156.2 360.2 156.2 354.2 L156.2 328 Z"/><path d="M148.6 342 L148.6 355.2" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/><path d="M157.8 328 L157.8 354.2 Q157.8 360.2 163.5 361.2 Q169.2 360.2 169.2 354.2 L169.2 328 Z"/><path d="M160.9 342 L160.9 355.2" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/><path d="M170.8 328 L170.8 354.9 Q170.8 360.9 177.0 361.9 Q183.2 360.9 183.2 354.9 L183.2 328 Z"/><path d="M174.2 342 L174.2 355.9" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/><path d="M184.8 328 L184.8 352.2 Q184.8 358.2 192.0 359.2 Q199.2 358.2 199.2 352.2 L199.2 328 Z"/><path d="M188.8 342 L188.8 353.2" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/><path d="M200.8 328 L200.8 352.4 Q200.8 358.4 208.0 359.4 Q215.2 358.4 215.2 352.4 L215.2 328 Z"/><path d="M204.8 342 L204.8 353.4" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/><path d="M216.8 328 L216.8 349.1 L220.9 355.1 L223.7 351.1 Q229.2 357.1 229.2 352.1 L229.2 328 Z"/><path d="M220.2 342 L220.2 353.1" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/><path d="M230.8 328 L230.8 352.4 Q230.8 358.4 236.5 359.4 Q242.2 358.4 242.2 352.4 L242.2 328 Z"/><path d="M233.9 342 L233.9 353.4" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/><path d="M243.8 328 L243.8 354.4 Q243.8 360.4 249.0 361.4 Q254.2 360.4 254.2 354.4 L254.2 328 Z"/><path d="M246.6 342 L246.6 355.4" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/><path d="M255.8 328 L255.8 350.0 Q255.8 356.0 260.5 357.0 Q265.2 356.0 265.2 350.0 L265.2 328 Z"/><path d="M258.3 342 L258.3 351.0" stroke="#fffaf0" stroke-opacity=".35" stroke-width="1.6" fill="none"/>
+      </g>
+      <g filter="url(#boneTex)">
+        <path d="M200 22 C118 22 56 78 52 168 C49 210 62 236 74 250 C72 262 76 276 88 286 C100 296 112 302 120 312 C126 322 130 332 134.0 341 Q139.5 333.7 145.0 341.7 Q151.0 333.6 157.0 341.7 Q163.5 333.5 170.0 341.9 Q177.0 333.6 184.0 340.9 Q192.0 333.7 200.0 341.2 Q208.0 333.5 216.0 341.3 Q223.0 332.9 230.0 341.0 Q236.5 332.9 243.0 341.0 Q249.0 332.2 255.0 341.7 Q260.5 333.6 266.0 342.0 C270 332 274 322 280 312 C288 302 300 296 312 286 C324 276 328 262 326 250 C338 236 351 210 348 168 C344 78 282 22 200 22 Z" fill="url(#boneG)" stroke="#4a3c28" stroke-width="1.6"/>
+        <g clip-path="url(#craniumClip)">
+          <!-- sombras: sienes, bajo pómulos, contorno -->
+          <ellipse cx="70" cy="215" rx="34" ry="48" fill="url(#shadeG)"/>
+          <ellipse cx="330" cy="215" rx="34" ry="48" fill="url(#shadeG)"/>
+          <ellipse cx="112" cy="300" rx="30" ry="22" fill="url(#shadeG)"/>
+          <ellipse cx="288" cy="300" rx="30" ry="22" fill="url(#shadeG)"/>
+          <ellipse cx="200" cy="318" rx="70" ry="22" fill="url(#shadeG)" opacity=".6"/>
+          <!-- luces: frente, pómulos, hueso nasal -->
+          <ellipse cx="168" cy="92" rx="70" ry="42" fill="url(#hiG)"/>
+          <ellipse cx="96" cy="262" rx="20" ry="11" fill="url(#hiG)" opacity=".8"/>
+          <ellipse cx="304" cy="262" rx="20" ry="11" fill="url(#hiG)" opacity=".5"/>
+          <ellipse cx="200" cy="236" rx="9" ry="16" fill="url(#hiG)" opacity=".7"/>
+          <!-- arco superciliar (cejas) -->
+          <path d="M92 182 C104 150 150 144 180 160 C190 166 196 172 200 176 C204 172 210 166 220 160 C250 144 296 150 308 182 C298 166 270 156 244 160 C226 163 214 172 200 184 C186 172 174 163 156 160 C130 156 102 166 92 182 Z" fill="#3a2c1c" opacity=".18"/>
+          <path d="M104 160 C126 142 166 144 186 160" fill="none" stroke="#fffaf0" stroke-opacity=".18" stroke-width="5" stroke-linecap="round"/>
+          <path d="M296 160 C274 142 234 144 214 160" fill="none" stroke="#fffaf0" stroke-opacity=".12" stroke-width="5" stroke-linecap="round"/>
+          <!-- sutura coronal -->
+          <path d="M96 92 l8 -4 l3 6 l7 -6 l4 5 l7 -7 l3 6 l8 -6 l4 5 l8 -5 l2 6 l9 -4 l3 5 l9 -3 l2 5 l9 -2 l3 4 l9 -1 l3 4 l8 0 l4 4 l8 -1 l3 4 l8 -2 l4 4 l7 -3 l4 5 l7 -4 l3 5 l7 -5 l4 6 l6 -6" fill="none" stroke="#4a3a26" stroke-opacity=".35" stroke-width="1.4" stroke-linejoin="round"/>
+        </g>
+      </g>
+      <!-- grietas -->
+      <path d="M238 40 L230 66 L242 84 L234 108 L246 126" fill="none" stroke="#2b2014" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M238 40 L230 66 L242 84 L234 108 L246 126" transform="translate(1.2 1.2)" fill="none" stroke="#fff6e0" stroke-opacity=".25" stroke-width="1.3" stroke-linecap="round"/>
+      <path d="M242 84 L258 90 L266 104" fill="none" stroke="#2b2014" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M242 84 L258 90 L266 104" transform="translate(1.2 1.2)" fill="none" stroke="#fff6e0" stroke-opacity=".25" stroke-width="0.8" stroke-linecap="round"/>
+      <path d="M74 150 L86 170 L80 188" fill="none" stroke="#2b2014" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M74 150 L86 170 L80 188" transform="translate(1.2 1.2)" fill="none" stroke="#fff6e0" stroke-opacity=".25" stroke-width="0.9" stroke-linecap="round"/>
+      <path d="M318 268 L304 280 L310 292" fill="none" stroke="#2b2014" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M318 268 L304 280 L310 292" transform="translate(1.2 1.2)" fill="none" stroke="#fff6e0" stroke-opacity=".25" stroke-width="0.8" stroke-linecap="round"/>
+      <!-- cuencas de los ojos -->
+      <path d="M100 190 C104 168 132 160 158 166 C178 171 187 187 185 205 C183 227 168 245 146 247 C120 249 100 235 96 215 C94 205 96 197 100 190 Z" fill="url(#socketG)"/>
+      <path d="M300 190 C296 168 268 160 242 166 C222 171 213 187 215 205 C217 227 232 245 254 247 C280 249 300 235 304 215 C306 205 304 197 300 190 Z" fill="url(#socketG)"/>
+      <path d="M102 222 C112 240 132 248 150 247" fill="none" stroke="#fffaf0" stroke-opacity=".28" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M298 222 C288 240 268 248 250 247" fill="none" stroke="#fffaf0" stroke-opacity=".18" stroke-width="2.2" stroke-linecap="round"/>
+      <!-- cavidad nasal -->
+      <path d="M200 252 C189 262 176 286 178 300 C180 310 191 311 197 303 L200 297 L203 303 C209 311 220 310 222 300 C224 286 211 262 200 252 Z" fill="url(#noseG)" stroke="#3a2a1b" stroke-width="1.2"/>
+      <path d="M200 262 L200 296" stroke="#5a4733" stroke-width="2" opacity=".7"/>
+    </g>
+    <g id="eyeSpill">
+      <circle cx="140" cy="206" r="78" fill="url(#spillG)"/>
+      <circle cx="260" cy="206" r="78" fill="url(#spillG)"/>
+    </g>
+    <g id="eyes">
+      <circle cx="140" cy="208" r="34" fill="url(#eyeHaloG)"/>
+      <circle cx="260" cy="208" r="34" fill="url(#eyeHaloG)"/>
+      <circle cx="140" cy="208" r="13" fill="url(#emberG)"/>
+      <circle cx="260" cy="208" r="13" fill="url(#emberG)"/>
+    </g>
+  </g>
+</svg>
+<div id="sub"></div>
+<div id="heard"></div>
+</div>
+
+<div id="fog"></div>
+
+<div id="bar" class="show">
+  <button id="subBtn" class="on">Subtítulos</button>
+  <button id="cfgBtn">Ajustes</button>
+</div>
+
+<!-- Solo aparece si el navegador bloquea el audio automático (Chrome normal). En modo kiosco o WebView no se ve. -->
+<div id="unlock">
+  <h1>Toca una vez para despertarla</h1>
+  <p>El navegador exige un toque para habilitar el sonido. Después de esto la calavera funciona sola, sin volver a tocar la pantalla.</p>
+  <p class="hint">Para que arranque sin ningún toque, ábrela en un navegador kiosco con reproducción automática habilitada, o dentro de un WebView propio.</p>
+</div>
+
+<div id="settings">
+  <div class="panel">
+    <h2>Ajustes</h2>
+    <p class="hint" id="storeInfo"></p>
+
+    <h3>Cerebro (LLM)</h3>
+    <label>Proveedor
+      <select id="f_llmProvider">
+        <option value="demo">Demo (sin API, respuestas fijas)</option>
+        <option value="anthropic">Anthropic (Claude)</option>
+        <option value="openai">OpenAI o compatible</option>
+      </select>
+    </label>
+    <label>API key <input id="f_llmKey" type="password" autocomplete="off"></label>
+    <div class="row">
+      <label>Modelo <input id="f_llmModel"></label>
+      <label>Modelo de respaldo <input id="f_llmFallback" placeholder="si el principal está saturado"></label>
+    </div>
+    <p class="hint">Con Gemini, si el respaldo queda vacío se usa «gemini-3.8-flash-lite». Si ese nombre no existe en tu cuenta, pon otro modelo de AI Studio.</p>
+    <label>Base URL (solo OpenAI/compatible) <input id="f_llmBase"></label>
+    <label>Personalidad (system prompt) <textarea id="f_persona"></textarea></label>
+
+    <h3>Voz (TTS)</h3>
+    <label>Proveedor
+      <select id="f_ttsProvider">
+        <option value="browser">Navegador (gratis, sin efectos ni reverb)</option>
+        <option value="gemini">Gemini TTS (usa la misma key de Gemini)</option>
+        <option value="openai">OpenAI TTS</option>
+        <option value="elevenlabs">ElevenLabs</option>
+      </select>
+    </label>
+    <label>Voz del navegador (gratis, sin límite; también es la de respaldo)
+      <select id="f_browserVoice"><option value="">Automática (prefiere voz masculina)</option></select>
+    </label>
+    <label>API key <input id="f_ttsKey" type="password" autocomplete="off"></label>
+    <div class="row">
+      <label>Voz <input id="f_ttsVoice"></label>
+      <label>Modelo <input id="f_ttsModel"></label>
+    </div>
+    <p class="hint">Gemini: voz «Algenib» (ronca) o «Gacrux» (madura), modelo «gemini-3.8-flash-tts»; si dejas la key vacía usa la del cerebro. OpenAI: voz «onyx». ElevenLabs: pega el Voice ID de una voz grave, modelo «eleven_multilingual_v2».</p>
+
+    <h3>Efectos</h3>
+    <label>Tono / velocidad: <span id="pitchVal"></span>
+      <input id="f_pitch" type="range" min="0.5" max="1.05" step="0.01">
+    </label>
+    <label>Reverb de cripta: <span id="reverbVal"></span>
+      <input id="f_reverb" type="range" min="0" max="1" step="0.01">
+    </label>
+    <p class="hint">Tono más bajo = voz más grave y lenta. El reverb solo se aplica con OpenAI o ElevenLabs.</p>
+    <button id="testBtn">Probar voz</button>
+
+    <h3>Comportamiento</h3>
+    <label>Habla sola si nadie le habla durante (segundos, 0 = nunca)
+      <input id="f_chatter" type="number" min="0" step="5">
+    </label>
+    <label>Idioma del reconocimiento <input id="f_lang"></label>
+    <p class="hint">Mientras este panel está abierto, la calavera no escucha. Las claves se guardan solo en este navegador.</p>
+
+    <div class="actions">
+      <span class="hint" id="savedMark" style="align-self:center;opacity:0;transition:opacity .3s">Guardado ✓</span>
+      <button id="closeBtn" class="on">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r=>setTimeout(r, ms));
+
+/* errores HTTP con código, y reintentos cuando el servicio está saturado */
+const RETRY_CODES = [429, 500, 502, 503, 504];
+class HttpError extends Error { constructor(status, msg){ super(status+' '+msg); this.status = status; } }
+async function httpErr(r){
+  let t = await r.text();
+  try{ const j = JSON.parse(t); const e = Array.isArray(j) ? j[0]?.error : j.error; if(e?.message) t = e.message; }catch{}
+  return new HttpError(r.status, t.slice(0,300));
+}
+async function withRetry(fn, tries=3){
+  let delay = 800;
+  for(let i=0;;i++){
+    try{ return await fn(); }
+    catch(e){
+      // una cuota diaria agotada no se arregla reintentando: se corta enseguida
+      if(i >= tries-1 || !RETRY_CODES.includes(e.status) || /per day|daily|quota/i.test(e.message)) throw e;
+      growl(1.2);                 // tapa el silencio mientras reintenta
+      await sleep(delay); delay *= 2.2;
+    }
+  }
+}
+
+/* ---------- configuración ---------- */
+const PERSONA = `Sos una calavera antigua, sarcástica y tenebrosa que custodia una casa embrujada en Halloween. Respondés en español rioplatense, siempre con 1 o 2 frases cortas (máximo 30 palabras). Tu humor es macabro pero apto para todo público, incluidos niños. A veces amenazás en broma con quedarte con el alma del visitante. Nunca uses emojis, asteriscos, listas ni acotaciones entre paréntesis: todo lo que escribas se dirá en voz alta.`;
+const DEFAULTS = {
+  browserVoice:'',
+  llmProvider:'demo', llmKey:'', llmModel:'claude-haiku-5-5', llmFallback:'', llmBase:'https://api.openai.com/v1',
+  persona:PERSONA,
+  ttsProvider:'browser', ttsKey:'', ttsVoice:'onyx', ttsModel:'tts-1',
+  pitch:0.82, reverb:0.45, lang:'es-UY', chatter:45
+};
+const LLM_MODEL_DEFAULT = { anthropic:'claude-haiku-5-5', openai:'gpt-4o-mini', demo:'' };
+/* reglas que se agregan siempre al system prompt, aunque la personalidad esté guardada */
+const SPEECH_RULES = `Reglas de formato: nunca escribas risas ni onomatopeyas con letras (jaja, jeje, muajaja, mmm, hmm, shhh, grrr). Si querés reírte escribí exactamente [risa], y si querés gruñir o murmurar escribí exactamente [gruñido]. El sistema los convierte en sonidos. Usá como máximo uno por respuesta, y solo al principio o al final.`;
+const GEMINI_STYLE = 'Voz muy grave, lenta y ronca, con tono tenebroso y burlón, como un espectro antiguo hablando dentro de una cripta.';
+const TTS_DEFAULT = { gemini:{voice:'Algenib',model:'gemini-3.8-flash-tts'}, openai:{voice:'onyx',model:'tts-1'}, elevenlabs:{voice:'',model:'eleven_multilingual_v2'}, browser:{voice:'',model:''} };
+
+function loadCfg(){ try{ return {...DEFAULTS, ...JSON.parse(localStorage.getItem('calavera-cfg')||'{}')}; }catch{ return {...DEFAULTS}; } }
+function saveCfg(){ try{ localStorage.setItem('calavera-cfg', JSON.stringify(cfg)); }catch{} }
+let cfg = loadCfg();
+
+/* ---------- estado ---------- */
+let state = 'sleep';          // sleep | idle | listening | thinking | speaking
+let history = [];
+let audioReady = false, settingsOpen = false;
+let listenNotBefore = 0, listenStarted = 0, srBackoff = 0;
+let lastActivity = performance.now();
+const STATUS = { sleep:'dormida', idle:'…', listening:'escuchando…', thinking:'pensando…', speaking:'hablando…' };
+function setState(s){ state = s; $('#status').textContent = STATUS[s]; }
+function showSub(t){ $('#sub').textContent = t; }
+let errTimer;
+function showErr(msg){
+  const h = $('#heard'); h.textContent = msg; h.classList.add('err');
+  clearTimeout(errTimer); errTimer = setTimeout(()=>{ h.textContent=''; h.classList.remove('err'); }, 7000);
+}
+
+/* ---------- audio: cadena de efectos ---------- */
+let ctx, fxIn, dryG, wetG, analyser, timeData, currentSrc = null;
+function makeCurve(k){
+  const n = 2048, c = new Float32Array(n);
+  for(let i=0;i<n;i++){ const x = i*2/n-1; c[i] = (1+k)*x/(1+k*Math.abs(x)); }
+  return c;
+}
+function makeImpulse(sec, decay){
+  const len = Math.floor(ctx.sampleRate*sec), buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for(let ch=0; ch<2; ch++){
+    const d = buf.getChannelData(ch);
+    for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/len, decay);
+  }
+  return buf;
+}
+function initAudio(){
+  if(ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const shaper = ctx.createWaveShaper(); shaper.curve = makeCurve(5); shaper.oversample = '2x';
+  const low = ctx.createBiquadFilter(); low.type='lowshelf'; low.frequency.value=180; low.gain.value=6;
+  const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=3800;
+  const conv = ctx.createConvolver(); conv.buffer = makeImpulse(2.8, 3);
+  dryG = ctx.createGain(); wetG = ctx.createGain();
+  const master = ctx.createGain(); master.gain.value = 0.8;
+  analyser = ctx.createAnalyser(); analyser.fftSize = 1024; timeData = new Float32Array(analyser.fftSize);
+  shaper.connect(low); low.connect(lp);
+  lp.connect(dryG); lp.connect(conv); conv.connect(wetG);
+  dryG.connect(master); wetG.connect(master); master.connect(ctx.destination);
+  lp.connect(analyser);
+  fxIn = shaper;
+  applyMix();
+}
+function applyMix(){
+  if(!ctx) return;
+  dryG.gain.value = 1 - cfg.reverb*0.5;
+  wetG.gain.value = cfg.reverb*1.2;
+}
+async function playArrayBuffer(ab){
+  const buf = await ctx.decodeAudioData(ab);
+  return new Promise(res=>{
+    const s = ctx.createBufferSource();
+    s.buffer = buf; s.playbackRate.value = cfg.pitch;
+    s.connect(fxIn); s.onended = ()=>{ if(currentSrc===s) currentSrc=null; res(); };
+    currentSrc = s; s.start();
+  });
+}
+function growl(dur=1.6){
+  if(!ctx || ctx.state!=='running') return;
+  const t = ctx.currentTime;
+  const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+  o1.type = o2.type = 'sawtooth';
+  o1.frequency.setValueAtTime(62, t); o1.frequency.linearRampToValueAtTime(46, t+dur);
+  o2.frequency.setValueAtTime(63.7, t); o2.frequency.linearRampToValueAtTime(47, t+dur);
+  const f = ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=420; f.Q.value=4;
+  const trem = ctx.createGain(); trem.gain.value = 0.6;
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 7;
+  const lfoG = ctx.createGain(); lfoG.gain.value = 0.4;
+  lfo.connect(lfoG); lfoG.connect(trem.gain);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.3, t+0.25);
+  g.gain.setValueAtTime(0.3, t+dur-0.4);
+  g.gain.linearRampToValueAtTime(0, t+dur);
+  o1.connect(f); o2.connect(f); f.connect(trem); trem.connect(g); g.connect(fxIn);
+  [o1,o2,lfo].forEach(o=>{ o.start(t); o.stop(t+dur+0.05); });
+}
+
+/* ---------- voz ---------- */
+let fakeTalk = false;
+/* voces del navegador: la elegida en Ajustes, o una masculina en español si existe (suenan más graves) */
+const MALE_RE = /male|hombre|masculin|jorge|diego|pablo|enrique|carlos|ra[uú]l|juan|miguel|antonio|[aá]lvaro|jos[eé]|andr[eé]s|tom[aá]s|alonso|dario|gonzalo/i;
+function spanishVoices(){
+  if(!('speechSynthesis' in window)) return [];
+  const lang = cfg.lang.slice(0,2).toLowerCase();
+  return speechSynthesis.getVoices().filter(v=>v.lang.toLowerCase().startsWith(lang));
+}
+function pickVoice(){
+  const es = spanishVoices(), full = cfg.lang.toLowerCase();
+  if(cfg.browserVoice){ const v = speechSynthesis.getVoices().find(v=>v.name===cfg.browserVoice); if(v) return v; }
+  const exact = v => v.lang.toLowerCase().replace('_','-')===full;
+  return es.find(v=>exact(v) && MALE_RE.test(v.name)) || es.find(v=>MALE_RE.test(v.name)) || es.find(exact) || es[0];
+}
+function speakBrowser(text){
+  return new Promise(res=>{
+    if(!('speechSynthesis' in window)) return res();
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = cfg.lang; const v = pickVoice(); if(v) u.voice = v;
+    // el control de tono (0.6–1.05) también gobierna la voz del navegador
+    u.pitch = Math.max(0.01, (cfg.pitch-0.6)*1.2);
+    u.rate  = 0.6 + (cfg.pitch-0.6)*0.9;
+    let done = false;
+    const finish = ()=>{ if(done) return; done = true; fakeTalk = false; res(); };
+    u.onend = u.onerror = finish;
+    setTimeout(finish, Math.max(3000, text.length*110));
+    fakeTalk = true;
+    speechSynthesis.speak(u);
+  });
+}
+function findAudio(o){
+  let found = null;
+  (function walk(x){
+    if(Array.isArray(x)) x.forEach(walk);
+    else if(x && typeof x==='object'){
+      if(x.type==='audio' && typeof x.data==='string') found = x.data;
+      else if(x.inlineData && typeof x.inlineData.data==='string') found = x.inlineData.data;
+      Object.values(x).forEach(walk);
+    }
+  })(o);
+  return found;
+}
+function b64ToBuf(b64){
+  const bin = atob(b64), u = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i);
+  return u.buffer;
+}
+async function fetchTTS(text, modelOverride){
+  const p = cfg.ttsProvider;
+  const model = modelOverride || cfg.ttsModel || TTS_DEFAULT[p].model;
+  let r;
+  if(p==='gemini'){
+    r = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method:'POST',
+      headers:{ 'x-goog-api-key': cfg.ttsKey || cfg.llmKey, 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        model,
+        input:[{ type:'user_input', content:[{ type:'text', text,
+          annotations:[{ type:'speech_metadata', style: GEMINI_STYLE }] }] }],
+        response_format:{ type:'audio' },
+        generation_config:{ speech_config:[{ voice: cfg.ttsVoice || 'Algenib' }] }
+      })
+    });
+    if(!r.ok) throw await httpErr(r);
+    const b64 = findAudio(await r.json());
+    if(!b64) throw new Error('Gemini respondió sin audio');
+    return b64ToBuf(b64);          // WAV 24 kHz, decodeAudioData lo entiende
+  }
+  if(p==='openai'){
+    r = await fetch('https://api.openai.com/v1/audio/speech', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+cfg.ttsKey, 'Content-Type':'application/json' },
+      body: JSON.stringify({ model, voice: cfg.ttsVoice || 'onyx', input: text, response_format:'mp3' })
+    });
+  } else if(p==='elevenlabs'){
+    if(!cfg.ttsVoice) throw new Error('falta el Voice ID de ElevenLabs');
+    r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(cfg.ttsVoice)}?output_format=mp3_44100_128`, {
+      method:'POST',
+      headers:{ 'xi-api-key':cfg.ttsKey, 'Content-Type':'application/json', 'Accept':'audio/mpeg' },
+      body: JSON.stringify({ text, model_id: model })
+    });
+  }
+  if(!r.ok) throw await httpErr(r);
+  return r.arrayBuffer();
+}
+/* risa malvada sintetizada: ráfagas graves "ja-ja-ja" que pasan por el reverb y mueven la mandíbula */
+function laugh(){
+  if(!ctx || ctx.state!=='running') return Promise.resolve();
+  const n = 5, step = 0.2, t0 = ctx.currentTime + 0.02;
+  for(let i=0;i<n;i++){
+    const t = t0 + i*step, f0 = 115 - i*9;
+    const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+    o1.type = o2.type = 'sawtooth';
+    o1.frequency.setValueAtTime(f0, t); o1.frequency.linearRampToValueAtTime(f0*0.85, t+0.15);
+    o2.frequency.setValueAtTime(f0*1.01, t); o2.frequency.linearRampToValueAtTime(f0*0.86, t+0.15);
+    const fA = ctx.createBiquadFilter(); fA.type='bandpass'; fA.frequency.value=700; fA.Q.value=1.4;
+    const fB = ctx.createBiquadFilter(); fB.type='bandpass'; fB.frequency.value=1150; fB.Q.value=2;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.9, t+0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, t+0.17);
+    o1.connect(fA); o2.connect(fA); o1.connect(fB);
+    fA.connect(g); fB.connect(g); g.connect(fxIn);
+    [o1,o2].forEach(o=>{ o.start(t); o.stop(t+0.2); });
+  }
+  return sleep(n*step*1000 + 250);
+}
+/* separa el texto en partes habladas y efectos: [risa], [gruñido] y onomatopeyas que se hayan colado */
+const FX_RE = /\[(risa|gruñido|grunido)\]|\b(?:muah?)?([jh])([aeiou])h?(?:[\s,.!¡]*\2\3h?)+\b[.!…]*|\b(?:h?m{2,}|hm+|e+m{2,}|sh{2,}h*|gr{2,}r*|a{3,}h*|u{3,}h*)\b[.!…]*/gi;
+function segmentsOf(text){
+  const trimP = s => s.replace(/^[\s,.;:!?¡¿…]+/, '').trim();
+  const segs = []; let last = 0, m;
+  FX_RE.lastIndex = 0;
+  while((m = FX_RE.exec(text))){
+    const before = trimP(text.slice(last, m.index));
+    if(/[a-záéíóúñü0-9]/i.test(before)) segs.push({ kind:'text', t: before });
+    const tag = (m[1]||'').toLowerCase(), raw = m[0].toLowerCase();
+    const isLaugh = tag==='risa' || (!tag && /[jh][aeiou]/.test(raw));
+    segs.push({ kind: isLaugh ? 'laugh' : 'growl' });
+    last = m.index + m[0].length;
+  }
+  const rest = trimP(text.slice(last));
+  if(/[a-záéíóúñü0-9]/i.test(rest)) segs.push({ kind:'text', t: rest });
+  return segs;
+}
+/* caché de audios: una frase repetida (saludo, frases para llamar la atención, prueba) no vuelve a gastar cuota */
+const TTS_CACHE = 'calavera-tts-v1';
+const ttsCacheKey = t => 'https://calavera.local/tts/'+encodeURIComponent([cfg.ttsProvider, cfg.ttsModel, cfg.ttsVoice, t].join('|'));
+async function cacheGet(k){
+  try{ const c = await caches.open(TTS_CACHE); const r = await c.match(k); return r ? await r.arrayBuffer() : null; }catch{ return null; }
+}
+async function cachePut(k, ab){
+  try{ const c = await caches.open(TTS_CACHE); await c.put(k, new Response(ab)); }catch{}
+}
+const LITE_TTS = 'gemini-3.8-flash-lite-tts';
+let primaryTTSBlockedUntil = 0;
+async function getTTS(t){
+  const k = ttsCacheKey(t);
+  const hit = await cacheGet(k);
+  if(hit) return hit;
+  let ab;
+  const model = cfg.ttsModel || TTS_DEFAULT[cfg.ttsProvider]?.model;
+  const canLite = cfg.ttsProvider==='gemini' && model!==LITE_TTS;
+  if(canLite && performance.now() < primaryTTSBlockedUntil){
+    ab = await fetchTTS(t, LITE_TTS);                 // el principal ya está agotado: directo al lite
+  } else {
+    try{ ab = await withRetry(()=>fetchTTS(t), 2); }
+    catch(e){
+      // con Gemini, si el modelo de voz agotó su cuota, prueba el modelo lite (tiene cuota aparte)
+      if(!(canLite && e.status===429)) throw e;
+      primaryTTSBlockedUntil = performance.now() + parseRetryMs(e.message);
+      ab = await fetchTTS(t, LITE_TTS);
+    }
+  }
+  await cachePut(k, ab.slice(0));     // copia: decodeAudioData consume el buffer original
+  return ab;
+}
+function parseRetryMs(msg){
+  const m = /retry in\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i.exec(msg||'');
+  if(!m || !(m[1]||m[2]||m[3])) return 10*60*1000;
+  return ((+m[1]||0)*3600 + (+m[2]||0)*60 + (+m[3]||0)) * 1000;
+}
+function fmtDur(ms){
+  const min = Math.round(ms/60000);
+  return min >= 60 ? Math.floor(min/60)+' h '+(min%60)+' min' : Math.max(1,min)+' min';
+}
+let ttsBlockedUntil = 0;
+async function sayText(t){
+  if(cfg.ttsProvider==='browser' || performance.now() < ttsBlockedUntil) return speakBrowser(t);
+  try{
+    await playArrayBuffer(await getTTS(t));
+  }catch(e){
+    console.error(e);
+    if(e.status===429){
+      // cuota agotada: se deja de intentar hasta que se libere, sin gastar más llamadas
+      const ms = parseRetryMs(e.message);
+      ttsBlockedUntil = performance.now() + ms;
+      showErr('Se agotó la cuota de voz de '+cfg.ttsProvider+'. Uso la voz del navegador durante '+fmtDur(ms)+'.');
+    } else {
+      showErr('Voz '+cfg.ttsProvider+': '+e.message.slice(0,120)+' — usé la voz del navegador como respaldo');
+    }
+    await speakBrowser(t);
+  }
+}
+async function speak(text){
+  setState('speaking');
+  showSub(text.replace(/\[(risa)\]/gi,'(ríe)').replace(/\[(gruñido|grunido)\]/gi,'').replace(/\s+/g,' ').trim());
+  for(const s of segmentsOf(text)){
+    if(s.kind==='laugh') await laugh();
+    else if(s.kind==='growl'){ growl(1.0); await sleep(1000); }
+    else await sayText(s.t);
+  }
+}
+/* tras hablar, espera a que se apague la cola del reverb antes de volver a escuchar */
+function afterSpeak(){
+  setState('idle');
+  const tail = cfg.ttsProvider==='browser' ? 0 : cfg.reverb*1800;
+  listenNotBefore = performance.now() + 700 + tail;
+  lastActivity = performance.now();
+}
+function stopSpeaking(){
+  try{ currentSrc && currentSrc.stop(); }catch{}
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
+/* ---------- cerebro ---------- */
+const DEMO = [
+  'Interesante... tu alma huele a miedo. Me encanta ese perfume.',
+  'Hace trescientos años que no escucho una pregunta tan tonta. Acercate un poco más.',
+  'No tengo cerebro, y aun así pienso mejor que vos.',
+  '¿Caramelos? Yo prefiero los huesitos. Bien crujientes.',
+  'Silencio... los otros muertos están durmiendo. Bueno, casi todos. [risa]',
+  'Si me das un abrazo, te cuento cómo perdí la piel.',
+  'Volvé a medianoche y hablamos de tu futuro. Es cortito.'
+];
+/* frases para llamar la atención cuando nadie habla (no gastan API de LLM) */
+const LURES = [
+  'Eh, vos. Sí, vos. Acercate, que no muerdo... mucho. [risa]',
+  'Hace siglos que nadie me dirige la palabra. ¿Nadie se anima?',
+  'Siento olor a alma fresca por acá.',
+  'Háblenme, mortales. La eternidad es muy aburrida.',
+  '¿Alguien quiere saber cómo termina su historia? Yo ya lo sé.',
+  '[risa] Los estoy viendo.'
+];
+function clean(t){
+  return (t||'').replace(/[*_#`~>]/g,'')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu,'')
+    .replace(/\s+/g,' ').trim();
+}
+async function callLLM(model, msgs){
+  const system = cfg.persona+'\n\n'+SPEECH_RULES;
+  if(cfg.llmProvider==='anthropic'){
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'x-api-key':cfg.llmKey, 'anthropic-version':'2023-06-01', 'content-type':'application/json',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({ model, max_tokens:400, system, messages: msgs })
+    });
+    if(!r.ok) throw await httpErr(r);
+    const d = await r.json();
+    return (d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join(' ');
+  }
+  const r = await fetch(cfg.llmBase.replace(/\/$/,'')+'/chat/completions', {
+    method:'POST',
+    headers:{ 'Authorization':'Bearer '+cfg.llmKey, 'Content-Type':'application/json' },
+    body: JSON.stringify({ model, max_tokens:400, messages:[{ role:'system', content: system }, ...msgs] })
+  });
+  if(!r.ok) throw await httpErr(r);
+  const d = await r.json();
+  return d.choices?.[0]?.message?.content || '';
+}
+function fallbackModel(){
+  if(cfg.llmFallback) return cfg.llmFallback;
+  if(cfg.llmProvider==='openai' && /googleapis/.test(cfg.llmBase)) return 'gemini-3.8-flash-lite';
+  return '';
+}
+async function askLLM(userText){
+  let reply;
+  if(cfg.llmProvider==='demo'){
+    await sleep(900);
+    return DEMO[Math.floor(Math.random()*DEMO.length)];
+  }
+  const msgs = [...history, { role:'user', content:userText }].slice(-10);
+  if(msgs[0].role !== 'user') msgs.shift();
+  try{
+    reply = await withRetry(()=>callLLM(cfg.llmModel, msgs), 3);
+  }catch(e){
+    const fb = fallbackModel();
+    if(!fb || fb===cfg.llmModel || !RETRY_CODES.includes(e.status)) throw e;
+    showErr('Modelo saturado, usando el de respaldo: '+fb);
+    reply = await withRetry(()=>callLLM(fb, msgs), 2);
+  }
+  reply = clean(reply);
+  // la historia solo se actualiza si hubo respuesta, para no dejar mensajes huérfanos
+  history = [...msgs, { role:'assistant', content: reply }];
+  return reply;
+}
+
+/* ---------- oído: escucha continua que se rearma sola ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+function listen(){
+  if(state!=='idle' || !audioReady || settingsOpen || !SR) return;
+  const now = performance.now();
+  if(now < listenNotBefore) return;
+  rec = new SR();
+  rec.lang = cfg.lang; rec.interimResults = false; rec.maxAlternatives = 1; rec.continuous = false;
+  rec.onresult = e => {
+    const t = e.results[0][0].transcript.trim();
+    srBackoff = 0;
+    if(t.length >= 2){ lastActivity = performance.now(); handle(t); }
+  };
+  rec.onerror = e => {
+    const n = performance.now();
+    if(e.error==='not-allowed' || e.error==='service-not-allowed'){
+      showErr('Sin permiso de micrófono. Permítelo en Chrome para este sitio (requiere HTTPS).');
+      listenNotBefore = n + 10000;
+    } else if(e.error==='network'){
+      srBackoff = Math.min(30000, (srBackoff||1000)*2);
+      listenNotBefore = n + srBackoff;
+      showErr('Reconocimiento de voz sin conexión, reintentando…');
+    } else if(e.error==='audio-capture'){
+      showErr('No encuentro el micrófono.');
+      listenNotBefore = n + 5000;
+    }
+  };
+  rec.onend = () => { if(state==='listening') setState('idle'); };
+  try{ rec.start(); listenStarted = now; setState('listening'); }
+  catch(e){ listenNotBefore = now + 2000; }
+}
+async function handle(text){
+  setState('thinking');
+  $('#heard').classList.remove('err');
+  $('#heard').textContent = '« '+text+' »';
+  growl(1.6);
+  let reply;
+  try{ reply = await askLLM(text); }
+  catch(e){ console.error(e); showErr('Cerebro: '+e.message); reply = 'Mis huesos no encuentran las palabras... algo se rompió en el más allá.'; }
+  await speak(reply || '[gruñido]');
+  afterSpeak();
+}
+async function chatter(){
+  $('#heard').textContent = '';
+  growl(1.2);
+  await sleep(700);
+  await speak(LURES[Math.floor(Math.random()*LURES.length)]);
+  afterSpeak();
+}
+/* vigilante: vuelve a escuchar, corta escuchas colgadas y dispara la charla espontánea */
+setInterval(()=>{
+  if(!audioReady || settingsOpen) return;
+  const now = performance.now();
+  if(state==='listening' && now - listenStarted > 20000){ try{ rec.abort(); }catch{} setState('idle'); }
+  if((state==='idle' || state==='listening') && cfg.chatter > 0 && now - lastActivity > cfg.chatter*1000){
+    lastActivity = now;
+    if(state==='listening'){ try{ rec.abort(); }catch{} setState('idle'); }
+    chatter();
+    return;
+  }
+  if(state==='idle') listen();
+}, 500);
+
+/* ---------- animación ---------- */
+/* la textura del hueso es costosa: se dibuja una sola vez como imagen y en cada cuadro solo se mueve */
+function bake(id){
+  const g = document.getElementById(id);
+  try{
+    const svg = g.ownerSVGElement, vb = svg.getAttribute('viewBox').split(/\s+/);
+    const src = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="'+vb.join(' ')+'" width="'+vb[2]+'" height="'+vb[3]+'">'
+              + svg.querySelector('defs').outerHTML + g.innerHTML + '</svg>';
+    const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    img.setAttribute('href', 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(src));
+    img.setAttribute('x', vb[0]); img.setAttribute('y', vb[1]);
+    img.setAttribute('width', vb[2]); img.setAttribute('height', vb[3]);
+    img.id = id;
+    g.replaceWith(img);
+    return img;
+  }catch(e){ console.warn('bake', e); return g; }
+}
+bake('cranium');
+const jaw = bake('jaw'), eyes = $('#eyes'), head = $('#head'), spill = $('#eyeSpill'), candle = $('#candle');
+let env = 0; const t0 = performance.now();
+function frame(now){
+  const t = (now - t0)/1000;
+  let target = 0;
+  if(analyser){
+    analyser.getFloatTimeDomainData(timeData);
+    let s = 0; for(let i=0;i<timeData.length;i++) s += timeData[i]*timeData[i];
+    const rms = Math.sqrt(s/timeData.length);
+    target = Math.min(1, Math.max(0, (rms-0.01)*5));
+  }
+  if(fakeTalk){
+    const f = 0.35 + 0.35*Math.sin(t*17)*Math.sin(t*5.3) + 0.2*Math.random();
+    target = Math.max(target, Math.min(1, Math.max(0, f)));
+  }
+  env += (target - env) * (target > env ? 0.5 : 0.18);
+  jaw.setAttribute('transform', `translate(0 ${(env*42).toFixed(1)})`);
+  let glow = state==='sleep' ? 0.12 : 0.35 + env*0.65;
+  if(state==='listening') glow = Math.max(glow, 0.6 + 0.25*Math.sin(t*4));
+  if(state==='thinking')  glow = Math.max(glow, 0.5 + 0.4*Math.abs(Math.sin(t*3)));
+  glow *= 0.9 + 0.1*Math.random();
+  eyes.style.opacity = glow.toFixed(2);
+  spill.style.opacity = (glow*0.9).toFixed(2);
+  candle.style.opacity = (0.75 + 0.12*Math.sin(t*7.3) + 0.08*Math.sin(t*13.1) + 0.05*Math.random()).toFixed(2);
+  eyes.setAttribute('transform', `translate(${(Math.sin(t*0.6)*5).toFixed(1)} ${(Math.sin(t*0.9)*2).toFixed(1)})`);
+  head.setAttribute('transform',
+    `translate(0 ${(Math.sin(t*1.1)*3).toFixed(1)}) rotate(${(Math.sin(t*0.5)*1.5 + env*2).toFixed(2)} 200 240)`);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- pantalla encendida ---------- */
+async function keepAwake(){
+  try{ if('wakeLock' in navigator) await navigator.wakeLock.request('screen'); }catch{}
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') keepAwake(); });
+
+/* ---------- arranque automático ---------- */
+function boot(){
+  initAudio();
+  ctx.onstatechange = checkAudio;
+  try{ ctx.resume(); }catch{}          // sin await: si el navegador lo bloquea, queda pendiente
+  keepAwake();
+  if('speechSynthesis' in window) speechSynthesis.getVoices();
+  setTimeout(checkAudio, 400);
+}
+function checkAudio(){
+  if(audioReady) return;
+  if(ctx.state==='running'){
+    audioReady = true;
+    $('#unlock').style.display = 'none';
+    greet();
+  } else {
+    $('#unlock').style.display = 'flex';
+  }
+}
+async function greet(){
+  setState('idle');
+  growl(1.4);
+  await sleep(900);
+  await speak('¿Quién osa despertarme de mi sueño eterno?');
+  afterSpeak();
+}
+/* un único toque (si hace falta) desbloquea audio, voz del navegador y pantalla completa */
+let primed = false;
+document.addEventListener('pointerdown', ()=>{
+  showBar();
+  if(!ctx) return;
+  try{ ctx.resume(); }catch{}
+  if(!primed){
+    primed = true;
+    if('speechSynthesis' in window){ try{ speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); }catch{} }
+    try{ document.documentElement.requestFullscreen?.().catch(()=>{}); }catch{}
+  }
+});
+window.addEventListener('load', boot);
+
+/* ---------- UI (opcional) ---------- */
+let barTimer;
+function showBar(){
+  $('#bar').classList.add('show');
+  clearTimeout(barTimer); barTimer = setTimeout(()=>$('#bar').classList.remove('show'), 5000);
+}
+showBar();
+$('#skull').addEventListener('click', ()=>{ if(state==='speaking') stopSpeaking(); });
+$('#subBtn').addEventListener('click', e=>{
+  $('#sub').classList.toggle('hidden'); e.currentTarget.classList.toggle('on');
+});
+
+const FIELDS = ['llmProvider','llmKey','llmModel','llmFallback','llmBase','persona','ttsProvider','browserVoice','ttsKey','ttsVoice','ttsModel','pitch','reverb','chatter','lang'];
+const NUMERIC = ['pitch','reverb','chatter'];
+function populateVoices(){
+  const sel = $('#f_browserVoice');
+  sel.length = 1;                                   // deja solo «Automática»
+  spanishVoices().forEach(v=>{
+    const o = document.createElement('option');
+    o.value = v.name; o.textContent = v.name+' ('+v.lang+')';
+    sel.appendChild(o);
+  });
+  if(cfg.browserVoice && ![...sel.options].some(o=>o.value===cfg.browserVoice)){
+    const o = document.createElement('option'); o.value = cfg.browserVoice; o.textContent = cfg.browserVoice; sel.appendChild(o);
+  }
+  sel.value = cfg.browserVoice;
+}
+if('speechSynthesis' in window) speechSynthesis.addEventListener?.('voiceschanged', ()=>{ if(settingsOpen) populateVoices(); });
+function fillForm(){
+  populateVoices();
+  FIELDS.forEach(k=>{ $('#f_'+k).value = cfg[k]; });
+  updateRangeLabels();
+}
+/* guardado automático: cada cambio en el formulario se aplica y se guarda al instante */
+let storageOK = true;
+try{ localStorage.setItem('__calavera_test','1'); localStorage.removeItem('__calavera_test'); }catch{ storageOK = false; }
+$('#storeInfo').textContent = storageOK
+  ? 'Los cambios se guardan solos en este navegador, para la dirección '+location.origin+'. Otro dispositivo u otra dirección tiene su propia configuración.'
+  : 'Atención: este navegador no permite guardar (¿modo incógnito o archivo abierto con doble clic?). Los cambios se perderán al recargar.';
+let savedTimer;
+function autosave(){
+  FIELDS.forEach(k=>{
+    const v = $('#f_'+k).value;
+    cfg[k] = NUMERIC.includes(k) ? (parseFloat(v)||0) : v.trim();
+  });
+  if(!cfg.pitch) cfg.pitch = DEFAULTS.pitch;
+  saveCfg(); applyMix();
+  const m = $('#savedMark'); m.style.opacity = 1;
+  clearTimeout(savedTimer); savedTimer = setTimeout(()=>{ m.style.opacity = 0; }, 1200);
+}
+FIELDS.forEach(k=>{
+  const el = $('#f_'+k);
+  el.addEventListener('input', autosave);
+  el.addEventListener('change', autosave);
+});
+function updateRangeLabels(){
+  $('#pitchVal').textContent = (+$('#f_pitch').value).toFixed(2);
+  $('#reverbVal').textContent = Math.round($('#f_reverb').value*100)+'%';
+}
+$('#f_pitch').addEventListener('input', updateRangeLabels);
+$('#f_reverb').addEventListener('input', updateRangeLabels);
+/* al cambiar de proveedor se proponen sus valores por defecto, y se guardan también */
+$('#f_llmProvider').addEventListener('change', e=>{
+  $('#f_llmModel').value = LLM_MODEL_DEFAULT[e.target.value]; autosave(); history = [];
+});
+$('#f_ttsProvider').addEventListener('change', e=>{
+  const d = TTS_DEFAULT[e.target.value]; $('#f_ttsVoice').value = d.voice; $('#f_ttsModel').value = d.model;
+  ttsBlockedUntil = 0; primaryTTSBlockedUntil = 0; autosave();
+});
+function closeSettings(){
+  settingsOpen = false; $('#settings').classList.remove('open');
+  lastActivity = performance.now();
+}
+$('#cfgBtn').addEventListener('click', ()=>{
+  settingsOpen = true;
+  if(state==='listening'){ try{ rec.abort(); }catch{} setState('idle'); }
+  fillForm(); $('#settings').classList.add('open');
+});
+$('#closeBtn').addEventListener('click', ()=>{
+  autosave();
+  if(!cfg.persona){ cfg.persona = PERSONA; saveCfg(); }
+  closeSettings();
+});
+$('#testBtn').addEventListener('click', async ()=>{
+  if(state==='speaking') return;
+  initAudio(); try{ ctx.resume(); }catch{}
+  autosave();
+  $('#testBtn').disabled = true;
+  await speak('Bienvenido a mi cripta, mortal. [risa] ¿Te quedás a cenar? Vos serías el plato principal.');
+  $('#testBtn').disabled = false;
+  setState('idle');
+});
+</script>
+</body>
+</html>
