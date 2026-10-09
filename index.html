@@ -44,6 +44,11 @@ body.adjusting #pAdjust{display:block}
 body.adjusting #photoRig{-webkit-mask-image:none;mask-image:none}
 .hCut{position:absolute;left:-8%;right:-8%;height:44px;transform:translateY(-50%);cursor:ns-resize}
 .hCut::after{content:"";position:absolute;left:0;right:0;top:50%;border-top:3px dashed #3f6;box-shadow:0 0 6px #3f6}
+#pHole{position:absolute;inset:0;background:#000}
+#hOutline{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+#hPath{fill:rgba(60,255,100,.12);stroke:#3f6;stroke-width:2.5;stroke-dasharray:7 5}
+.hPt{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;background:rgba(60,255,100,.25);border:3px solid #3f6;box-shadow:0 0 6px #3f6;cursor:move;touch-action:none}
+.hPt::after{content:"";position:absolute;inset:-12px}
 .hEye{position:absolute;border:3px solid #3f6;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 6px #3f6;cursor:move}
 #adjustBar{position:fixed;z-index:20;left:0;right:0;bottom:0;display:none;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center;
   padding:12px 16px max(12px,env(safe-area-inset-bottom));background:rgba(10,8,6,.88);border-top:1px solid var(--line);font-size:.85rem}
@@ -209,11 +214,14 @@ textarea{min-height:120px;resize:vertical}
 </svg>
 <div id="photoRig">
   <div id="pBox">
-    <img id="pJaw" alt="">
     <img id="pTop" alt="">
+    <div id="pHole"></div>
+    <img id="pJaw" alt="">
     <div id="pEyes"><div class="pEye" id="pEyeL"></div><div class="pEye" id="pEyeR"></div></div>
     <div id="pAdjust">
-      <div class="hCut" id="hCut"></div>
+      <svg id="hOutline" preserveAspectRatio="none"><path id="hPath"/></svg>
+      <div class="hPt" id="hAL"></div><div class="hPt" id="hML"></div><div class="hPt" id="hMC"></div>
+      <div class="hPt" id="hMR"></div><div class="hPt" id="hAR"></div>
       <div class="hEye" id="hEyeL"></div>
       <div class="hEye" id="hEyeR"></div>
     </div>
@@ -224,7 +232,7 @@ textarea{min-height:120px;resize:vertical}
 </div>
 
 <div id="adjustBar">
-  <span class="tip">Arrastra la línea verde hasta la unión entre los dientes de arriba y los de abajo, y los círculos sobre las cuencas de los ojos.</span>
+  <span class="tip">Pon los 3 puntos del centro sobre la unión de los dientes (comisuras y centro), los 2 de los costados en los ángulos de la mandíbula, y los círculos sobre los ojos. Lo sombreado en verde es lo que se mueve.</span>
   <label>Ojos <input id="aEye" type="range" min="0.04" max="0.3" step="0.005"></label>
   <label>Apertura <input id="aJaw" type="range" min="0.02" max="0.2" step="0.005"></label>
   <label><input id="aOpen" type="checkbox"> Ver boca abierta</label>
@@ -864,15 +872,20 @@ function bake(id){
 }
 bake('cranium');
 const jaw = bake('jaw'), eyes = $('#eyes'), head = $('#head'), spill = $('#eyeSpill'), candle = $('#candle');
-const photoRig = $('#photoRig'), pBox = $('#pBox'), pTop = $('#pTop'), pJaw = $('#pJaw'), pEyes = $('#pEyes');
+const photoRig = $('#photoRig'), pBox = $('#pBox'), pTop = $('#pTop'), pJaw = $('#pJaw'), pEyes = $('#pEyes'), pHole = $('#pHole');
 let photoReady = false, photoW = 1, photoH = 1, adjusting = false;
 let loadedSkin = null;
 const photoOn = () => cfg.skin!=='svg' && photoReady && loadedSkin===cfg.skin;
 const PRESETS = {
-  blanca:     { src:'skull-blanca.png',     cutY:0.757, eyeLx:0.318, eyeLy:0.49, eyeRx:0.678, eyeRy:0.49, eyeSize:0.13, jawOpen:0.07 },
-  caricatura: { src:'skull-caricatura.png', cutY:0.683, eyeLx:0.362, eyeLy:0.40, eyeRx:0.638, eyeRy:0.40, eyeSize:0.13, jawOpen:0.08 },
+  blanca:     { src:'skull-blanca.png',     cutY:0.757, eyeLx:0.318, eyeLy:0.49, eyeRx:0.678, eyeRy:0.49, eyeSize:0.13, jawOpen:0.07,
+                mLx:0.335, mLy:0.742, mCx:0.5, mCy:0.758, mRx:0.665, mRy:0.742, aLx:0.245, aLy:0.715, aRx:0.755, aRy:0.715 },
+  caricatura: { src:'skull-caricatura.png', cutY:0.683, eyeLx:0.362, eyeLy:0.40, eyeRx:0.638, eyeRy:0.40, eyeSize:0.13, jawOpen:0.08,
+                mLx:0.33, mLy:0.683, mCx:0.5, mCy:0.683, mRx:0.67, mRy:0.683, aLx:0.24, aLy:0.625, aRx:0.76, aRy:0.625 },
 };
 const PHOTO_GEO = { cutY:0.7, eyeLx:0.35, eyeLy:0.43, eyeRx:0.65, eyeRy:0.43, eyeSize:0.12, jawOpen:0.07 };
+const JAW_KEYS = ['mLx','mLy','mCx','mCy','mRx','mRy','aLx','aLy','aRx','aRy'];
+/* forma por defecto a partir de la altura del corte: comisuras al 32 % y 68 %, ángulos más afuera y un poco más abajo */
+const jawFromCut = c => ({ mLx:0.32, mLy:c-0.01, mCx:0.5, mCy:c, mRx:0.68, mRy:c-0.01, aLx:0.2, aLy:c+0.03, aRx:0.8, aRy:c+0.03 });
 const GEO_KEYS = Object.keys(PHOTO_GEO);
 if(!cfg.geo){                       // la versión anterior guardaba la geometría de la foto sin separar
   cfg.geo = { photo: Object.fromEntries(GEO_KEYS.map(k=>[k, cfg[k] ?? PHOTO_GEO[k]])) };
@@ -880,7 +893,12 @@ if(!cfg.geo){                       // la versión anterior guardaba la geometr�
 function G(){
   const k = cfg.skin==='svg' ? 'photo' : cfg.skin;
   if(!cfg.geo[k]) cfg.geo[k] = Object.fromEntries(GEO_KEYS.map(g=>[g, (PRESETS[k]||PHOTO_GEO)[g]]));
-  return cfg.geo[k];
+  const g = cfg.geo[k];
+  if(g.mCx === undefined){                          // geometría guardada con el corte recto anterior
+    const src = PRESETS[k] && PRESETS[k].mCx !== undefined ? PRESETS[k] : jawFromCut(g.cutY);
+    JAW_KEYS.forEach(j=> g[j] = src[j]);
+  }
+  return g;
 }
 let env = 0; const t0 = performance.now();
 function frame(now){
@@ -996,16 +1014,29 @@ function applyLayout(){
   else { sk.style.height = ''; sk.style.width = ''; }
 }
 function placePhotoParts(){
-  const c = (G().cutY*100).toFixed(2);
-  pTop.style.clipPath = pTop.style.webkitClipPath = `inset(0 0 ${Math.max(0, 100-c-0.4).toFixed(2)}% 0)`;
-  pJaw.style.clipPath = pJaw.style.webkitClipPath = `inset(${c}% 0 0 0)`;
-  const bw = pBox.clientWidth || parseFloat(pBox.style.width) || 0, d = G().eyeSize*bw*2.4;
+  const g = G();
+  const bw = pBox.clientWidth || parseFloat(pBox.style.width) || 0, d = g.eyeSize*bw*2.4;
+  const bh = pBox.clientHeight || parseFloat(pBox.style.height) || 0;
+  const jp = jawPath(g, bw, bh);
+  pTop.style.clipPath = pTop.style.webkitClipPath = 'none';
+  for(const el of [pHole, pJaw]) el.style.clipPath = el.style.webkitClipPath = `path('${jp}')`;
+  $('#hOutline').setAttribute('viewBox', `0 0 ${bw} ${bh}`);
+  $('#hPath').setAttribute('d', jp);
+  [['#hML','mL'],['#hMC','mC'],['#hMR','mR'],['#hAL','aL'],['#hAR','aR']].forEach(([id,k])=>{
+    const e = $(id); e.style.left = (g[k+'x']*100)+'%'; e.style.top = (g[k+'y']*100)+'%';
+  });
   [['#pEyeL','#hEyeL',G().eyeLx,G().eyeLy],['#pEyeR','#hEyeR',G().eyeRx,G().eyeRy]].forEach(([g,hd,x,y])=>{
     for(const id of [g,hd]){ const e = $(id); e.style.left = (x*100)+'%'; e.style.top = (y*100)+'%'; }
     $(g).style.width = $(g).style.height = d+'px';
     $(hd).style.width = $(hd).style.height = Math.max(36, G().eyeSize*bw)+'px';
   });
-  $('#hCut').style.top = c+'%';
+}
+/* contorno de la mandíbula: ángulo izq. → comisura izq. → curva por el centro → comisura der. → ángulo der. → abajo */
+function jawPath(g, w, h){
+  const X = v => (v*w).toFixed(1), Y = v => (v*h).toFixed(1);
+  const qx = 2*g.mCx - (g.mLx+g.mRx)/2, qy = 2*g.mCy - (g.mLy+g.mRy)/2;   // control para que la curva pase por el centro
+  return `M${X(g.aLx)} ${Y(1.2)} L${X(g.aLx)} ${Y(g.aLy)} L${X(g.mLx)} ${Y(g.mLy)} `+
+         `Q${X(qx)} ${Y(qy)} ${X(g.mRx)} ${Y(g.mRy)} L${X(g.aRx)} ${Y(g.aRy)} L${X(g.aRx)} ${Y(1.2)} Z`;
 }
 
 /* ---------- foto propia: se guarda en el teléfono (IndexedDB) ---------- */
@@ -1057,7 +1088,7 @@ async function usePhotoFile(file){
     const blob = await shrink(file);
     try{ await idbPut('photo', blob); }catch(e){ showErr('No pude guardar la foto en el teléfono: se perderá al recargar.'); }
     cfg.skin = 'photo'; $('#f_skin').value = 'photo';
-    cfg.geo.photo = { ...PHOTO_GEO };               // foto nueva: geometría desde cero
+    cfg.geo.photo = { ...PHOTO_GEO, ...jawFromCut(PHOTO_GEO.cutY) };   // foto nueva: geometría desde cero
     await setPhoto(blob);
     saveCfg();
     closeSettings(); enterAdjust();
@@ -1106,7 +1137,8 @@ function dragHandle(id, apply){
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   });
 }
-dragHandle('#hCut', (x,y)=>{ G().cutY = y; });
+[['#hML','mL'],['#hMC','mC'],['#hMR','mR'],['#hAL','aL'],['#hAR','aR']].forEach(([id,k])=>
+  dragHandle(id, (x,y)=>{ const g = G(); g[k+'x'] = x; g[k+'y'] = y; g.cutY = g.mCy; }));
 dragHandle('#hEyeL', (x,y)=>{ G().eyeLx = x; G().eyeLy = y; });
 dragHandle('#hEyeR', (x,y)=>{ G().eyeRx = x; G().eyeRy = y; });
 $('#aEye').addEventListener('input', e=>{ G().eyeSize = +e.target.value; placePhotoParts(); });
