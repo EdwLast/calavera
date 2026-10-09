@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#000000">
 <title>Calavera parlante</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+
 <style>
 :root{--ui:#c9bfa6;--panel:#14100c;--line:#3a2e22}
 *{box-sizing:border-box;margin:0}
@@ -211,7 +218,7 @@ textarea{min-height:120px;resize:vertical}
       <label>Modelo <input id="f_llmModel"></label>
       <label>Modelo de respaldo <input id="f_llmFallback" placeholder="si el principal está saturado"></label>
     </div>
-    <p class="hint">Con Gemini, si el respaldo queda vacío se usa «gemini-3.8-flash-lite». Si ese nombre no existe en tu cuenta, pon otro modelo de AI Studio.</p>
+    <p class="hint">Con Gemini, si el respaldo queda vacío se usa «gemini-3.5-flash-lite». Si ese nombre no existe en tu cuenta, pon otro modelo de AI Studio.</p>
     <label>Base URL (solo OpenAI/compatible) <input id="f_llmBase"></label>
     <label>Personalidad (system prompt) <textarea id="f_persona"></textarea></label>
 
@@ -411,7 +418,10 @@ function speakBrowser(text){
     let done = false;
     const finish = ()=>{ if(done) return; done = true; fakeTalk = false; res(); };
     u.onend = u.onerror = finish;
-    setTimeout(finish, Math.max(3000, text.length*110));
+    // respaldo por si Android no avisa el final: se calcula según la velocidad real,
+    // y si todavía está sonando se espera un poco más en lugar de cortar
+    const guard = ()=>{ if(done) return; if(speechSynthesis.speaking) setTimeout(guard, 500); else finish(); };
+    setTimeout(guard, Math.max(3000, text.length*95/u.rate));
     fakeTalk = true;
     speechSynthesis.speak(u);
   });
@@ -641,7 +651,7 @@ async function callLLM(model, msgs){
 }
 function fallbackModel(){
   if(cfg.llmFallback) return cfg.llmFallback;
-  if(cfg.llmProvider==='openai' && /googleapis/.test(cfg.llmBase)) return 'gemini-3.8-flash-lite';
+  if(cfg.llmProvider==='openai' && /googleapis/.test(cfg.llmBase)) return 'gemini-3.5-flash-lite';
   return '';
 }
 async function askLLM(userText){
@@ -668,17 +678,27 @@ async function askLLM(userText){
 
 /* ---------- oído: escucha continua que se rearma sola ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null;
+let rec = null, fastFails = 0;
 function listen(){
   if(state!=='idle' || !audioReady || settingsOpen || !SR) return;
   const now = performance.now();
   if(now < listenNotBefore) return;
+  if('speechSynthesis' in window && speechSynthesis.speaking) return;   // nunca escuchar mientras habla
+  let gotSpeech = false;
   rec = new SR();
-  rec.lang = cfg.lang; rec.interimResults = false; rec.maxAlternatives = 1; rec.continuous = false;
+  rec.lang = cfg.lang; rec.interimResults = false; rec.maxAlternatives = 1;
+  rec.continuous = true;            // una sola sesión larga en vez de muchas cortas
   rec.onresult = e => {
-    const t = e.results[0][0].transcript.trim();
+    const r = e.results[e.results.length-1];
+    if(!r.isFinal) return;
+    const t = r[0].transcript.trim();
     srBackoff = 0;
-    if(t.length >= 2){ lastActivity = performance.now(); handle(t); }
+    if(t.length >= 2){
+      gotSpeech = true; fastFails = 0;
+      lastActivity = performance.now();
+      handle(t);                    // pasa a «pensando» antes de cortar el micrófono
+      try{ rec.abort(); }catch{}
+    }
   };
   rec.onerror = e => {
     const n = performance.now();
@@ -694,7 +714,14 @@ function listen(){
       listenNotBefore = n + 5000;
     }
   };
-  rec.onend = () => { if(state==='listening') setState('idle'); };
+  rec.onend = () => {
+    if(state!=='listening') return;
+    setState('idle');
+    // si se apagó sola casi enseguida, esperar cada vez más antes de reintentar (evita el bucle)
+    const dur = performance.now() - listenStarted;
+    if(!gotSpeech && dur < 2000){ fastFails++; listenNotBefore = performance.now() + Math.min(8000, 400*2**fastFails); }
+    else if(dur >= 2000) fastFails = 0;
+  };
   try{ rec.start(); listenStarted = now; setState('listening'); }
   catch(e){ listenNotBefore = now + 2000; }
 }
@@ -720,7 +747,7 @@ async function chatter(){
 setInterval(()=>{
   if(!audioReady || settingsOpen) return;
   const now = performance.now();
-  if(state==='listening' && now - listenStarted > 20000){ try{ rec.abort(); }catch{} setState('idle'); }
+  if(state==='listening' && now - listenStarted > 30000){ try{ rec.abort(); }catch{} setState('idle'); }
   if((state==='idle' || state==='listening') && cfg.chatter > 0 && now - lastActivity > cfg.chatter*1000){
     lastActivity = now;
     if(state==='listening'){ try{ rec.abort(); }catch{} setState('idle'); }
@@ -824,6 +851,8 @@ document.addEventListener('pointerdown', ()=>{
   }
 });
 window.addEventListener('load', boot);
+/* permite instalarla como app (ícono en la pantalla de inicio, pantalla completa) */
+if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 
 /* ---------- UI (opcional) ---------- */
 let barTimer;
