@@ -53,6 +53,8 @@ body.adjusting #photoRig{-webkit-mask-image:none;mask-image:none}
 #adjustBar{position:fixed;z-index:20;left:0;right:0;bottom:0;display:none;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center;
   padding:12px 16px max(12px,env(safe-area-inset-bottom));background:rgba(10,8,6,.88);border-top:1px solid var(--line);font-size:.85rem}
 body.adjusting #adjustBar{display:flex}
+body.adjusting #stage{justify-content:flex-start;padding-top:8px}
+#adjustBar .tip{font-size:.78rem}
 body.adjusting #bar, body.adjusting #status, body.adjusting #sub, body.adjusting #heard{display:none}
 #adjustBar label{display:flex;align-items:center;gap:6px}
 #adjustBar input[type=range]{width:110px}
@@ -220,8 +222,9 @@ textarea{min-height:120px;resize:vertical}
     <div id="pEyes"><div class="pEye" id="pEyeL"></div><div class="pEye" id="pEyeR"></div></div>
     <div id="pAdjust">
       <svg id="hOutline" preserveAspectRatio="none"><path id="hPath"/></svg>
-      <div class="hPt" id="hAL"></div><div class="hPt" id="hML"></div><div class="hPt" id="hMC"></div>
-      <div class="hPt" id="hMR"></div><div class="hPt" id="hAR"></div>
+      <div class="hPt" id="hBL"></div><div class="hPt" id="hAL"></div><div class="hPt" id="hML"></div>
+      <div class="hPt" id="hQL"></div><div class="hPt" id="hMC"></div><div class="hPt" id="hQR"></div>
+      <div class="hPt" id="hMR"></div><div class="hPt" id="hAR"></div><div class="hPt" id="hBR"></div>
       <div class="hEye" id="hEyeL"></div>
       <div class="hEye" id="hEyeR"></div>
     </div>
@@ -232,7 +235,7 @@ textarea{min-height:120px;resize:vertical}
 </div>
 
 <div id="adjustBar">
-  <span class="tip">Pon los 3 puntos del centro sobre la unión de los dientes (comisuras y centro), los 2 de los costados en los ángulos de la mandíbula, y los círculos sobre los ojos. Lo sombreado en verde es lo que se mueve.</span>
+  <span class="tip">Pon los 5 puntos del centro sobre la unión de los dientes, los 2 de los costados en los ángulos de la mandíbula y los 2 de abajo sobre el borde de la mandíbula. Los círculos van sobre los ojos. Lo sombreado en verde es lo que se mueve.</span>
   <label>Ojos <input id="aEye" type="range" min="0.04" max="0.3" step="0.005"></label>
   <label>Apertura <input id="aJaw" type="range" min="0.02" max="0.2" step="0.005"></label>
   <label><input id="aOpen" type="checkbox"> Ver boca abierta</label>
@@ -878,14 +881,25 @@ let loadedSkin = null;
 const photoOn = () => cfg.skin!=='svg' && photoReady && loadedSkin===cfg.skin;
 const PRESETS = {
   blanca:     { src:'skull-blanca.png',     cutY:0.757, eyeLx:0.318, eyeLy:0.49, eyeRx:0.678, eyeRy:0.49, eyeSize:0.13, jawOpen:0.07,
-                mLx:0.335, mLy:0.742, mCx:0.5, mCy:0.758, mRx:0.665, mRy:0.742, aLx:0.245, aLy:0.715, aRx:0.755, aRy:0.715 },
+                mLx:0.335, mLy:0.742, qLx:0.415, qLy:0.754, mCx:0.5, mCy:0.758, qRx:0.585, qRy:0.754, mRx:0.665, mRy:0.742,
+                aLx:0.245, aLy:0.715, aRx:0.755, aRy:0.715, bLx:0.285, bLy:0.86, bRx:0.715, bRy:0.86 },
   caricatura: { src:'skull-caricatura.png', cutY:0.683, eyeLx:0.362, eyeLy:0.40, eyeRx:0.638, eyeRy:0.40, eyeSize:0.13, jawOpen:0.08,
-                mLx:0.33, mLy:0.683, mCx:0.5, mCy:0.683, mRx:0.67, mRy:0.683, aLx:0.24, aLy:0.625, aRx:0.76, aRy:0.625 },
+                mLx:0.33, mLy:0.683, qLx:0.415, qLy:0.683, mCx:0.5, mCy:0.683, qRx:0.585, qRy:0.683, mRx:0.67, mRy:0.683,
+                aLx:0.24, aLy:0.625, aRx:0.76, aRy:0.625, bLx:0.27, bLy:0.80, bRx:0.73, bRy:0.80 },
 };
 const PHOTO_GEO = { cutY:0.7, eyeLx:0.35, eyeLy:0.43, eyeRx:0.65, eyeRy:0.43, eyeSize:0.12, jawOpen:0.07 };
-const JAW_KEYS = ['mLx','mLy','mCx','mCy','mRx','mRy','aLx','aLy','aRx','aRy'];
+const JAW_KEYS = ['mLx','mLy','qLx','qLy','mCx','mCy','qRx','qRy','mRx','mRy','aLx','aLy','aRx','aRy','bLx','bLy','bRx','bRy'];
+const JAW_PTS = ['bL','aL','mL','qL','mC','qR','mR','aR','bR'];
+/* completa los puntos nuevos a partir de la forma anterior (curva de 3 puntos y lados rectos) */
+function fillJaw(g){
+  const qx = 2*g.mCx - (g.mLx+g.mRx)/2, qy = 2*g.mCy - (g.mLy+g.mRy)/2;
+  const B = (t, a, c, b) => (1-t)*(1-t)*a + 2*t*(1-t)*c + t*t*b;
+  if(g.qLx === undefined){ g.qLx = B(.25,g.mLx,qx,g.mRx); g.qLy = B(.25,g.mLy,qy,g.mRy); g.qRx = B(.75,g.mLx,qx,g.mRx); g.qRy = B(.75,g.mLy,qy,g.mRy); }
+  if(g.bLx === undefined){ g.bLx = g.aLx + 0.03; g.bLy = Math.min(0.97, g.aLy + 0.15); g.bRx = g.aRx - 0.03; g.bRy = Math.min(0.97, g.aRy + 0.15); }
+  return g;
+}
 /* forma por defecto a partir de la altura del corte: comisuras al 32 % y 68 %, ángulos más afuera y un poco más abajo */
-const jawFromCut = c => ({ mLx:0.32, mLy:c-0.01, mCx:0.5, mCy:c, mRx:0.68, mRy:c-0.01, aLx:0.2, aLy:c+0.03, aRx:0.8, aRy:c+0.03 });
+const jawFromCut = c => fillJaw({ mLx:0.32, mLy:c-0.01, mCx:0.5, mCy:c, mRx:0.68, mRy:c-0.01, aLx:0.2, aLy:c+0.03, aRx:0.8, aRy:c+0.03 });
 const GEO_KEYS = Object.keys(PHOTO_GEO);
 if(!cfg.geo){                       // la versión anterior guardaba la geometría de la foto sin separar
   cfg.geo = { photo: Object.fromEntries(GEO_KEYS.map(k=>[k, cfg[k] ?? PHOTO_GEO[k]])) };
@@ -898,7 +912,10 @@ function G(){
     const src = PRESETS[k] && PRESETS[k].mCx !== undefined ? PRESETS[k] : jawFromCut(g.cutY);
     JAW_KEYS.forEach(j=> g[j] = src[j]);
   }
-  return g;
+  // calaveras precargadas ajustadas con la versión anterior: tomar los puntos nuevos de la calavera
+  if(g.qLx === undefined && PRESETS[k] && PRESETS[k].qLx !== undefined)
+    ['qLx','qLy','qRx','qRy','bLx','bLy','bRx','bRy'].forEach(j=> g[j] = PRESETS[k][j]);
+  return fillJaw(g);
 }
 let env = 0; const t0 = performance.now();
 function frame(now){
@@ -997,13 +1014,14 @@ function applyLayout(){
   const rot = adjusting ? 0 : (+cfg.rotate || 0), mir = !adjusting && cfg.mirror==='si', side = rot % 180 !== 0;
   el.style.transform = `rotate(${rot}deg)` + (mir ? ' scaleX(-1)' : '');
   const ar = photo ? photoW/(photoH*(1+G().jawOpen)) : 400/520;     // ancho / alto, con lugar para que baje la mandíbula
-  const W = innerWidth, H = innerHeight;
+  // durante el ajuste, la calavera entra entera en el espacio libre arriba de la barra
+  const W = innerWidth, H = innerHeight - (adjusting ? $('#adjustBar').offsetHeight + 16 : 0);
   let h = null;
   if(holo || rot || mir){
     const k = cfg.size || 0.94;
     h = side ? Math.min(W*k, H*k/ar) : Math.min(H*k, W*k/ar);
   } else if(photo){
-    h = Math.min(H*(adjusting ? 0.7 : 0.6), W*0.92/ar);
+    h = Math.min(H*(adjusting ? 0.96 : 0.6), W*0.92/ar);
   }
   if(photo){
     const bw = h*ar, bh = h/(1+G().jawOpen);
@@ -1022,7 +1040,7 @@ function placePhotoParts(){
   for(const el of [pHole, pJaw]) el.style.clipPath = el.style.webkitClipPath = `path('${jp}')`;
   $('#hOutline').setAttribute('viewBox', `0 0 ${bw} ${bh}`);
   $('#hPath').setAttribute('d', jp);
-  [['#hML','mL'],['#hMC','mC'],['#hMR','mR'],['#hAL','aL'],['#hAR','aR']].forEach(([id,k])=>{
+  JAW_PTS.map(k=>['#h'+k.toUpperCase(), k]).forEach(([id,k])=>{
     const e = $(id); e.style.left = (g[k+'x']*100)+'%'; e.style.top = (g[k+'y']*100)+'%';
   });
   [['#pEyeL','#hEyeL',G().eyeLx,G().eyeLy],['#pEyeR','#hEyeR',G().eyeRx,G().eyeRy]].forEach(([g,hd,x,y])=>{
@@ -1033,10 +1051,14 @@ function placePhotoParts(){
 }
 /* contorno de la mandíbula: ángulo izq. → comisura izq. → curva por el centro → comisura der. → ángulo der. → abajo */
 function jawPath(g, w, h){
-  const X = v => (v*w).toFixed(1), Y = v => (v*h).toFixed(1);
-  const qx = 2*g.mCx - (g.mLx+g.mRx)/2, qy = 2*g.mCy - (g.mLy+g.mRy)/2;   // control para que la curva pase por el centro
-  return `M${X(g.aLx)} ${Y(1.2)} L${X(g.aLx)} ${Y(g.aLy)} L${X(g.mLx)} ${Y(g.mLy)} `+
-         `Q${X(qx)} ${Y(qy)} ${X(g.mRx)} ${Y(g.mRy)} L${X(g.aRx)} ${Y(g.aRy)} L${X(g.aRx)} ${Y(1.2)} Z`;
+  const P = k => [g[k+'x']*w, g[k+'y']*h], f = n => n.toFixed(1);
+  const mouth = ['mL','qL','mC','qR','mR'].map(P);
+  let d = `M${f(g.bLx*w)} ${f(h)} L${f(g.bLx*w)} ${f(g.bLy*h)} L${f(g.aLx*w)} ${f(g.aLy*h)} L${f(mouth[0][0])} ${f(mouth[0][1])} `;
+  for(let i=0; i<mouth.length-1; i++){             // curva que pasa exactamente por cada punto
+    const p0 = mouth[Math.max(0,i-1)], p1 = mouth[i], p2 = mouth[i+1], p3 = mouth[Math.min(mouth.length-1,i+2)];
+    d += `C${f(p1[0]+(p2[0]-p0[0])/6)} ${f(p1[1]+(p2[1]-p0[1])/6)} ${f(p2[0]-(p3[0]-p1[0])/6)} ${f(p2[1]-(p3[1]-p1[1])/6)} ${f(p2[0])} ${f(p2[1])} `;
+  }
+  return d + `L${f(g.aRx*w)} ${f(g.aRy*h)} L${f(g.bRx*w)} ${f(g.bRy*h)} L${f(g.bRx*w)} ${f(h)} Z`;
 }
 
 /* ---------- foto propia: se guarda en el teléfono (IndexedDB) ---------- */
@@ -1137,7 +1159,7 @@ function dragHandle(id, apply){
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   });
 }
-[['#hML','mL'],['#hMC','mC'],['#hMR','mR'],['#hAL','aL'],['#hAR','aR']].forEach(([id,k])=>
+JAW_PTS.map(k=>['#h'+k.toUpperCase(), k]).forEach(([id,k])=>
   dragHandle(id, (x,y)=>{ const g = G(); g[k+'x'] = x; g[k+'y'] = y; g.cutY = g.mCy; }));
 dragHandle('#hEyeL', (x,y)=>{ G().eyeLx = x; G().eyeLy = y; });
 dragHandle('#hEyeR', (x,y)=>{ G().eyeRx = x; G().eyeRy = y; });
