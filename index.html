@@ -31,6 +31,27 @@ body.holo{background:#000}
 body.holo #candle, body.holo #fog, body.holo #status, body.holo #sub, body.holo #heard{display:none}
 body.holo #stage{padding:0}
 body.holo #skull{width:auto;transition:transform .3s}
+#photoRig{position:relative;z-index:1;display:none;background:#000;
+  -webkit-mask-image:radial-gradient(ellipse 50% 50% at 50% 50%,#000 84%,transparent 100%);
+  mask-image:radial-gradient(ellipse 50% 50% at 50% 50%,#000 84%,transparent 100%)}
+#photoRig.on{display:block}
+#pBox{position:absolute;left:0;top:0}
+#pBox img{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;-webkit-user-drag:none;user-select:none}
+.pEye{position:absolute;border-radius:50%;transform:translate(-50%,-50%);mix-blend-mode:screen;pointer-events:none;
+  background:radial-gradient(circle,#fff1c8 0,#ffb070 12%,rgba(255,58,20,.9) 26%,rgba(255,40,16,.3) 40%,rgba(255,30,10,0) 54%)}
+#pAdjust{position:absolute;inset:0;display:none;touch-action:none}
+body.adjusting #pAdjust{display:block}
+body.adjusting #photoRig{-webkit-mask-image:none;mask-image:none}
+.hCut{position:absolute;left:-8%;right:-8%;height:44px;transform:translateY(-50%);cursor:ns-resize}
+.hCut::after{content:"";position:absolute;left:0;right:0;top:50%;border-top:3px dashed #3f6;box-shadow:0 0 6px #3f6}
+.hEye{position:absolute;border:3px solid #3f6;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 6px #3f6;cursor:move}
+#adjustBar{position:fixed;z-index:20;left:0;right:0;bottom:0;display:none;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center;
+  padding:12px 16px max(12px,env(safe-area-inset-bottom));background:rgba(10,8,6,.88);border-top:1px solid var(--line);font-size:.85rem}
+body.adjusting #adjustBar{display:flex}
+body.adjusting #bar, body.adjusting #status, body.adjusting #sub, body.adjusting #heard{display:none}
+#adjustBar label{display:flex;align-items:center;gap:6px}
+#adjustBar input[type=range]{width:110px}
+#adjustBar .tip{flex-basis:100%;text-align:center;opacity:.75}
 #bar{position:fixed;z-index:4;bottom:max(12px,env(safe-area-inset-bottom));left:0;right:0;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;padding:0 12px;opacity:0;pointer-events:none;transition:opacity .4s}
 #bar.show{opacity:1;pointer-events:auto}
 button{background:#1a1410;color:var(--ui);border:1px solid var(--line);border-radius:999px;padding:10px 16px;font-size:.9rem;font-family:inherit}
@@ -186,10 +207,29 @@ textarea{min-height:120px;resize:vertical}
     </g>
   </g>
 </svg>
+<div id="photoRig">
+  <div id="pBox">
+    <img id="pJaw" alt="">
+    <img id="pTop" alt="">
+    <div id="pEyes"><div class="pEye" id="pEyeL"></div><div class="pEye" id="pEyeR"></div></div>
+    <div id="pAdjust">
+      <div class="hCut" id="hCut"></div>
+      <div class="hEye" id="hEyeL"></div>
+      <div class="hEye" id="hEyeR"></div>
+    </div>
+  </div>
+</div>
 <div id="sub"></div>
 <div id="heard"></div>
 </div>
 
+<div id="adjustBar">
+  <span class="tip">Arrastra la línea verde hasta la unión entre los dientes de arriba y los de abajo, y los círculos sobre las cuencas de los ojos.</span>
+  <label>Ojos <input id="aEye" type="range" min="0.04" max="0.3" step="0.005"></label>
+  <label>Apertura <input id="aJaw" type="range" min="0.02" max="0.2" step="0.005"></label>
+  <label><input id="aOpen" type="checkbox"> Ver boca abierta</label>
+  <button id="aDone" class="on">Listo</button>
+</div>
 <div id="fog"></div>
 
 <div id="bar" class="show">
@@ -254,6 +294,17 @@ textarea{min-height:120px;resize:vertical}
     </label>
     <p class="hint">Tono más bajo = voz más grave y lenta. El reverb solo se aplica con OpenAI o ElevenLabs.</p>
     <button id="testBtn">Probar voz</button>
+
+    <h3>Imagen</h3>
+    <label>Calavera
+      <select id="f_skin"><option value="svg">Dibujada realista</option><option value="blanca">Calavera blanca</option><option value="caricatura">Calavera caricatura</option><option value="photo">Foto propia…</option></select>
+    </label>
+    <div class="row">
+      <button id="photoBtn" type="button">Elegir foto…</button>
+      <button id="adjustBtn" type="button">Ajustar boca y ojos</button>
+    </div>
+    <input id="photoFile" type="file" accept="image/*" hidden>
+    <p class="hint">Las calaveras precargadas ya vienen ajustadas; con «Ajustar boca y ojos» puedes retocarlas. Para una foto propia, usa una de frente, con los dientes juntos y fondo negro. Al elegirla se abre el ajuste: marcas dónde se separa la mandíbula y dónde van los ojos. La foto se guarda en este teléfono.</p>
 
     <h3>Holograma</h3>
     <div class="row">
@@ -324,7 +375,8 @@ const DEFAULTS = {
   persona:PERSONA,
   ttsProvider:'browser', ttsKey:'', ttsVoice:'onyx', ttsModel:'tts-1',
   pitch:0.82, reverb:0.45, lang:'es-UY', chatter:45,
-  holo:'no', mirror:'no', rotate:'0', orient:'vertical', size:0.94
+  holo:'no', mirror:'no', rotate:'0', orient:'vertical', size:0.94,
+  skin:'svg', cutY:0.7, eyeLx:0.35, eyeLy:0.43, eyeRx:0.65, eyeRy:0.43, eyeSize:0.12, jawOpen:0.07
 };
 const LLM_MODEL_DEFAULT = { anthropic:'claude-haiku-5-5', openai:'gpt-4o-mini', demo:'' };
 /* reglas que se agregan siempre al system prompt, aunque la personalidad esté guardada */
@@ -400,6 +452,7 @@ async function playArrayBuffer(ab){
 function growl(dur=1.6){
   if(!ctx || ctx.state!=='running') return;
   const t = ctx.currentTime;
+  growlEnd = performance.now() + dur*1000;
   const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
   o1.type = o2.type = 'sawtooth';
   o1.frequency.setValueAtTime(62, t); o1.frequency.linearRampToValueAtTime(46, t+dur);
@@ -509,9 +562,11 @@ async function fetchTTS(text, modelOverride){
   return r.arrayBuffer();
 }
 /* risa malvada sintetizada: ráfagas graves "ja-ja-ja" que pasan por el reverb y mueven la mandíbula */
+let laughT0 = 0, laughEnd = 0, growlEnd = 0;   // la mandíbula sigue la risa y el gruñido
 function laugh(){
   if(!ctx || ctx.state!=='running') return Promise.resolve();
   const n = 5, step = 0.2, t0 = ctx.currentTime + 0.02;
+  laughT0 = performance.now() + 20; laughEnd = laughT0 + n*step*1000;
   for(let i=0;i<n;i++){
     const t = t0 + i*step, f0 = 115 - i*9;
     const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
@@ -809,6 +864,24 @@ function bake(id){
 }
 bake('cranium');
 const jaw = bake('jaw'), eyes = $('#eyes'), head = $('#head'), spill = $('#eyeSpill'), candle = $('#candle');
+const photoRig = $('#photoRig'), pBox = $('#pBox'), pTop = $('#pTop'), pJaw = $('#pJaw'), pEyes = $('#pEyes');
+let photoReady = false, photoW = 1, photoH = 1, adjusting = false;
+let loadedSkin = null;
+const photoOn = () => cfg.skin!=='svg' && photoReady && loadedSkin===cfg.skin;
+const PRESETS = {
+  blanca:     { src:'skull-blanca.png',     cutY:0.757, eyeLx:0.318, eyeLy:0.49, eyeRx:0.678, eyeRy:0.49, eyeSize:0.13, jawOpen:0.07 },
+  caricatura: { src:'skull-caricatura.png', cutY:0.683, eyeLx:0.362, eyeLy:0.40, eyeRx:0.638, eyeRy:0.40, eyeSize:0.13, jawOpen:0.08 },
+};
+const PHOTO_GEO = { cutY:0.7, eyeLx:0.35, eyeLy:0.43, eyeRx:0.65, eyeRy:0.43, eyeSize:0.12, jawOpen:0.07 };
+const GEO_KEYS = Object.keys(PHOTO_GEO);
+if(!cfg.geo){                       // la versión anterior guardaba la geometría de la foto sin separar
+  cfg.geo = { photo: Object.fromEntries(GEO_KEYS.map(k=>[k, cfg[k] ?? PHOTO_GEO[k]])) };
+}
+function G(){
+  const k = cfg.skin==='svg' ? 'photo' : cfg.skin;
+  if(!cfg.geo[k]) cfg.geo[k] = Object.fromEntries(GEO_KEYS.map(g=>[g, (PRESETS[k]||PHOTO_GEO)[g]]));
+  return cfg.geo[k];
+}
 let env = 0; const t0 = performance.now();
 function frame(now){
   const t = (now - t0)/1000;
@@ -823,6 +896,11 @@ function frame(now){
     const f = 0.35 + 0.35*Math.sin(t*17)*Math.sin(t*5.3) + 0.2*Math.random();
     target = Math.max(target, Math.min(1, Math.max(0, f)));
   }
+  if(now >= laughT0 && now < laughEnd){               // «ja» cada 0,2 s
+    const ph = ((now - laughT0)/200) % 1;
+    target = Math.max(target, ph < 0.5 ? 0.95*Math.sin(ph/0.5*Math.PI) : 0.05);
+  }
+  if(now < growlEnd) target = Math.max(target, 0.22 + 0.12*Math.sin(t*9));   // murmullo
   env += (target - env) * (target > env ? 0.5 : 0.18);
   jaw.setAttribute('transform', `translate(0 ${(env*42).toFixed(1)})`);
   let glow = state==='sleep' ? 0.12 : 0.35 + env*0.65;
@@ -835,6 +913,13 @@ function frame(now){
   eyes.setAttribute('transform', `translate(${(Math.sin(t*0.6)*5).toFixed(1)} ${(Math.sin(t*0.9)*2).toFixed(1)})`);
   head.setAttribute('transform',
     `translate(0 ${(Math.sin(t*1.1)*3).toFixed(1)}) rotate(${(Math.sin(t*0.5)*1.5 + env*2).toFixed(2)} 200 240)`);
+  if(photoOn()){
+    const bh = pBox.clientHeight, open = adjusting ? ($('#aOpen').checked ? 1 : 0) : env;
+    pJaw.style.transform = `translateY(${(open*G().jawOpen*bh).toFixed(1)}px)`;
+    pEyes.style.opacity = adjusting ? 1 : glow.toFixed(2);
+    pBox.style.transform = adjusting ? '' :
+      `translateY(${(Math.sin(t*1.1)*0.5).toFixed(2)}%) rotate(${(Math.sin(t*0.5)*1.2 + env*1.5).toFixed(2)}deg)`;
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -885,22 +970,164 @@ document.addEventListener('pointerdown', ()=>{
 });
 /* ---------- holograma (fantasma de Pepper) ---------- */
 function applyLayout(){
-  const holo = cfg.holo==='si', sk = $('#skull');
+  const holo = cfg.holo==='si', sk = $('#skull'), photo = photoOn();
   document.body.classList.toggle('holo', holo);
-  const rot = +cfg.rotate || 0, side = rot % 180 !== 0;
-  sk.style.transform = `rotate(${rot}deg)` + (cfg.mirror==='si' ? ' scaleX(-1)' : '');
-  if(holo || rot || cfg.mirror==='si'){
-    // tamaño que entra en pantalla según el giro (la calavera mide 400 × 520)
-    const W = innerWidth, H = innerHeight, k = cfg.size || 0.94, ar = 400/520;
-    const h = side ? Math.min(W*k, H*k/ar) : Math.min(H*k, W*k/ar);
-    sk.style.height = Math.round(h)+'px'; sk.style.width = 'auto';
-  } else { sk.style.height = ''; sk.style.width = ''; }
+  sk.style.display = photo ? 'none' : '';
+  photoRig.classList.toggle('on', photo);
+  const el = photo ? photoRig : sk;
+  // durante el ajuste la foto se muestra derecha, para poder marcar los puntos
+  const rot = adjusting ? 0 : (+cfg.rotate || 0), mir = !adjusting && cfg.mirror==='si', side = rot % 180 !== 0;
+  el.style.transform = `rotate(${rot}deg)` + (mir ? ' scaleX(-1)' : '');
+  const ar = photo ? photoW/(photoH*(1+G().jawOpen)) : 400/520;     // ancho / alto, con lugar para que baje la mandíbula
+  const W = innerWidth, H = innerHeight;
+  let h = null;
+  if(holo || rot || mir){
+    const k = cfg.size || 0.94;
+    h = side ? Math.min(W*k, H*k/ar) : Math.min(H*k, W*k/ar);
+  } else if(photo){
+    h = Math.min(H*(adjusting ? 0.7 : 0.6), W*0.92/ar);
+  }
+  if(photo){
+    const bw = h*ar, bh = h/(1+G().jawOpen);
+    photoRig.style.width = Math.round(bw)+'px'; photoRig.style.height = Math.round(h)+'px';
+    pBox.style.width = Math.round(bw)+'px'; pBox.style.height = Math.round(bh)+'px';
+    placePhotoParts();
+  } else if(h){ sk.style.height = Math.round(h)+'px'; sk.style.width = 'auto'; }
+  else { sk.style.height = ''; sk.style.width = ''; }
 }
+function placePhotoParts(){
+  const c = (G().cutY*100).toFixed(2);
+  pTop.style.clipPath = pTop.style.webkitClipPath = `inset(0 0 ${Math.max(0, 100-c-0.4).toFixed(2)}% 0)`;
+  pJaw.style.clipPath = pJaw.style.webkitClipPath = `inset(${c}% 0 0 0)`;
+  const bw = pBox.clientWidth || parseFloat(pBox.style.width) || 0, d = G().eyeSize*bw*2.4;
+  [['#pEyeL','#hEyeL',G().eyeLx,G().eyeLy],['#pEyeR','#hEyeR',G().eyeRx,G().eyeRy]].forEach(([g,hd,x,y])=>{
+    for(const id of [g,hd]){ const e = $(id); e.style.left = (x*100)+'%'; e.style.top = (y*100)+'%'; }
+    $(g).style.width = $(g).style.height = d+'px';
+    $(hd).style.width = $(hd).style.height = Math.max(36, G().eyeSize*bw)+'px';
+  });
+  $('#hCut').style.top = c+'%';
+}
+
+/* ---------- foto propia: se guarda en el teléfono (IndexedDB) ---------- */
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open('calavera', 1);
+    r.onupgradeneeded = ()=> r.result.createObjectStore('kv');
+    r.onsuccess = ()=> res(r.result); r.onerror = ()=> rej(r.error);
+  });
+}
+async function idbPut(k, v){
+  const db = await idbOpen();
+  return new Promise((res,rej)=>{ const tx = db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete = res; tx.onerror = ()=> rej(tx.error); });
+}
+async function idbGet(k){
+  const db = await idbOpen();
+  return new Promise((res,rej)=>{ const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = ()=> res(q.result); q.onerror = ()=> rej(q.error); });
+}
+let photoURL = null;
+function setImageSrc(src, skin){
+  return new Promise((res,rej)=>{
+    pTop.onload = ()=>{
+      if(skin!==cfg.skin){ res(); return; }          // se cambió de calavera mientras cargaba
+      photoW = pTop.naturalWidth; photoH = pTop.naturalHeight;
+      photoReady = true; loadedSkin = skin; applyLayout(); res();
+    };
+    pTop.onerror = ()=> rej(new Error('no se pudo abrir la imagen'));
+    pJaw.src = src; pTop.src = src;
+  });
+}
+function setPhoto(blob){
+  if(photoURL) URL.revokeObjectURL(photoURL);
+  photoURL = URL.createObjectURL(blob);
+  return setImageSrc(photoURL, 'photo');
+}
+/* achica la foto (máx. 1200 px) para que el teléfono la mueva sin esfuerzo */
+async function shrink(file){
+  const img = await new Promise((res,rej)=>{ const i = new Image(); i.onload = ()=>res(i); i.onerror = ()=>rej(new Error('formato de imagen no soportado')); i.src = URL.createObjectURL(file); });
+  const k = Math.min(1, 1200/Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.naturalWidth*k); c.height = Math.round(img.naturalHeight*k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  URL.revokeObjectURL(img.src);
+  const png = /png|webp|gif/i.test(file.type);
+  return new Promise(res=> c.toBlob(res, png ? 'image/png' : 'image/jpeg', 0.92));
+}
+async function usePhotoFile(file){
+  try{
+    const blob = await shrink(file);
+    try{ await idbPut('photo', blob); }catch(e){ showErr('No pude guardar la foto en el teléfono: se perderá al recargar.'); }
+    cfg.skin = 'photo'; $('#f_skin').value = 'photo';
+    cfg.geo.photo = { ...PHOTO_GEO };               // foto nueva: geometría desde cero
+    await setPhoto(blob);
+    saveCfg();
+    closeSettings(); enterAdjust();
+  }catch(e){ showErr('Foto: '+e.message); }
+}
+async function loadSkin(){
+  const k = cfg.skin;
+  if(k==='svg' || (k===loadedSkin && photoReady)){ applyLayout(); return; }
+  photoReady = false; applyLayout();
+  try{
+    if(PRESETS[k]) await setImageSrc(PRESETS[k].src, k);
+    else if(k==='photo'){
+      const b = await idbGet('photo').catch(()=>null);
+      if(b) await setPhoto(b);
+      else { showErr('Todavía no elegiste una foto propia.'); $('#photoFile').click(); }
+    }
+  }catch(e){ showErr('Imagen: '+e.message); }
+}
+
+/* ---------- ajuste de la foto: línea de la boca y ojos ---------- */
+function enterAdjust(){
+  if(!photoOn()) return;
+  adjusting = true; settingsOpen = true;
+  if(state==='listening'){ try{ rec.abort(); }catch{} setState('idle'); }
+  document.body.classList.add('adjusting');
+  $('#aEye').value = G().eyeSize; $('#aJaw').value = G().jawOpen; $('#aOpen').checked = false;
+  applyLayout();
+}
+function exitAdjust(){
+  adjusting = false; settingsOpen = false;
+  document.body.classList.remove('adjusting');
+  saveCfg(); applyLayout();
+  lastActivity = performance.now();
+}
+function dragHandle(id, apply){
+  const el = $(id);
+  el.addEventListener('pointerdown', e=>{
+    e.preventDefault(); e.stopPropagation(); el.setPointerCapture(e.pointerId);
+    const move = ev=>{
+      const r = pBox.getBoundingClientRect();
+      const x = Math.min(1, Math.max(0, (ev.clientX - r.left)/r.width));
+      const y = Math.min(0.98, Math.max(0.02, (ev.clientY - r.top)/r.height));
+      apply(x, y); placePhotoParts();
+    };
+    const up = ()=>{ el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); saveCfg(); };
+    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  });
+}
+dragHandle('#hCut', (x,y)=>{ G().cutY = y; });
+dragHandle('#hEyeL', (x,y)=>{ G().eyeLx = x; G().eyeLy = y; });
+dragHandle('#hEyeR', (x,y)=>{ G().eyeRx = x; G().eyeRy = y; });
+$('#aEye').addEventListener('input', e=>{ G().eyeSize = +e.target.value; placePhotoParts(); });
+$('#aJaw').addEventListener('input', e=>{ G().jawOpen = +e.target.value; applyLayout(); });
+$('#aOpen').addEventListener('change', ()=>{});
+$('#aDone').addEventListener('click', exitAdjust);
+$('#photoBtn').addEventListener('click', ()=> $('#photoFile').click());
+$('#photoFile').addEventListener('change', e=>{ const f = e.target.files[0]; e.target.value = ''; if(f) usePhotoFile(f); });
+$('#adjustBtn').addEventListener('click', ()=>{
+  if(photoOn()){ closeSettings(); enterAdjust(); }
+  else if(cfg.skin==='svg') showErr('Elige primero una calavera precargada o una foto propia.');
+  else $('#photoFile').click();
+});
+document.addEventListener('change', e=>{ if(e.target && e.target.id==='f_skin') loadSkin(); });
+photoRig.addEventListener('click', ()=>{ if(!adjusting && state==='speaking') stopSpeaking(); });
 async function applyOrientation(){
   try{ await screen.orientation?.lock?.(cfg.orient==='horizontal' ? 'landscape' : 'portrait'); }catch{}
 }
 addEventListener('resize', applyLayout);
 applyLayout();
+loadSkin();
 window.addEventListener('load', ()=>{ boot(); applyOrientation(); });
 /* permite instalarla como app (ícono en la pantalla de inicio, pantalla completa) */
 if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
@@ -918,7 +1145,7 @@ $('#subBtn').addEventListener('click', e=>{
 });
 
 document.addEventListener('change', e=>{ if(e.target && e.target.id==='f_orient') applyOrientation(); });
-const FIELDS = ['llmProvider','llmKey','llmModel','llmFallback','llmBase','persona','ttsProvider','browserVoice','ttsKey','ttsVoice','ttsModel','pitch','reverb','chatter','lang','holo','mirror','rotate','orient','size'];
+const FIELDS = ['llmProvider','llmKey','llmModel','llmFallback','llmBase','persona','ttsProvider','browserVoice','ttsKey','ttsVoice','ttsModel','pitch','reverb','chatter','lang','holo','mirror','rotate','orient','size','skin'];
 const NUMERIC = ['pitch','reverb','chatter','size'];
 function populateVoices(){
   const sel = $('#f_browserVoice');
