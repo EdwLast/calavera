@@ -59,6 +59,8 @@ body.adjusting #bar, body.adjusting #status, body.adjusting #sub, body.adjusting
 #adjustBar label{display:flex;align-items:center;gap:6px}
 #adjustBar input[type=range]{width:110px}
 #adjustBar .tip{flex-basis:100%;text-align:center;opacity:.75}
+#dbg{position:fixed;z-index:30;left:6px;top:6px;max-width:70vw;font:11px/1.35 ui-monospace,monospace;color:#7f7;background:rgba(0,0,0,.7);padding:4px 6px;border-radius:6px;pointer-events:none;white-space:pre-wrap;display:none}
+body.debug #dbg{display:block}
 #bar{position:fixed;z-index:4;bottom:max(12px,env(safe-area-inset-bottom));left:0;right:0;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;padding:0 12px;opacity:0;pointer-events:none;transition:opacity .4s}
 #bar.show{opacity:1;pointer-events:auto}
 button{background:#1a1410;color:var(--ui);border:1px solid var(--line);border-radius:999px;padding:10px 16px;font-size:.9rem;font-family:inherit}
@@ -84,6 +86,7 @@ textarea{min-height:120px;resize:vertical}
 
 <div id="candle"></div>
 <div id="status">dormida</div>
+<div id="dbg"></div>
 
 <div id="stage">
 <svg id="skull" viewBox="0 0 400 520" role="img" aria-label="Calavera">
@@ -345,6 +348,9 @@ textarea{min-height:120px;resize:vertical}
       <input id="f_chatter" type="number" min="0" step="5">
     </label>
     <label>Idioma del reconocimiento <input id="f_lang"></label>
+    <label>Diagnóstico en pantalla
+      <select id="f_debug"><option value="no">No</option><option value="si">Sí: mostrar estado del micrófono y del audio</option></select>
+    </label>
     <p class="hint">Mientras este panel está abierto, la calavera no escucha. Las claves se guardan solo en este navegador.</p>
 
     <div class="actions">
@@ -357,6 +363,19 @@ textarea{min-height:120px;resize:vertical}
 <script>
 const $ = s => document.querySelector(s);
 const sleep = ms => new Promise(r=>setTimeout(r, ms));
+const dbgLines = [];
+function dbg(msg){
+  const t = new Date().toTimeString().slice(3,8);
+  dbgLines.push(t+' '+msg); if(dbgLines.length > 8) dbgLines.shift();
+}
+setInterval(()=>{
+  if(typeof cfg==='undefined') return;
+  document.body.classList.toggle('debug', cfg.debug==='si');
+  if(cfg.debug!=='si') return;
+  const a = (typeof ctx!=='undefined' && ctx) ? ctx.state : '—';
+  const ss = ('speechSynthesis' in window && speechSynthesis.speaking) ? 'sí' : 'no';
+  document.getElementById('dbg').textContent = `estado: ${state} · audio: ${a} · voz nav.: ${ss}\n` + dbgLines.join('\n');
+}, 300);
 
 /* errores HTTP con código, y reintentos cuando el servicio está saturado */
 const RETRY_CODES = [429, 500, 502, 503, 504];
@@ -387,7 +406,7 @@ const DEFAULTS = {
   persona:PERSONA,
   ttsProvider:'browser', ttsKey:'', ttsVoice:'onyx', ttsModel:'tts-1',
   pitch:0.82, reverb:0.45, lang:'es-UY', chatter:45,
-  holo:'no', mirror:'no', rotate:'0', orient:'vertical', size:0.94,
+  holo:'no', mirror:'no', rotate:'0', orient:'vertical', size:0.94, debug:'no',
   skin:'svg', cutY:0.7, eyeLx:0.35, eyeLy:0.43, eyeRx:0.65, eyeRy:0.43, eyeSize:0.12, jawOpen:0.07
 };
 const LLM_MODEL_DEFAULT = { anthropic:'claude-haiku-5-5', openai:'gpt-4o-mini', demo:'' };
@@ -455,11 +474,22 @@ function applyMix(){
 async function playArrayBuffer(ab){
   return playBuffer(await ctx.decodeAudioData(ab));
 }
-function playBuffer(buf){
+async function ensureAudio(){
+  if(ctx.state==='running') return true;
+  dbg('audio '+ctx.state+' → reactivando');
+  try{ await Promise.race([ctx.resume(), sleep(800)]); }catch{}
+  return ctx.state==='running';
+}
+async function playBuffer(buf){
+  if(!(await ensureAudio())) throw new Error('Android pausó el audio');
   return new Promise(res=>{
     const s = ctx.createBufferSource();
     s.buffer = buf; s.playbackRate.value = cfg.pitch;
-    s.connect(fxIn); s.onended = ()=>{ if(currentSrc===s) currentSrc=null; res(); };
+    let done = false;
+    const finish = ()=>{ if(done) return; done = true; if(currentSrc===s) currentSrc=null; res(); };
+    s.connect(fxIn); s.onended = finish;
+    // si el audio se pausa a mitad de la frase, onended nunca llega: se da por terminada igual
+    setTimeout(finish, (buf.duration/s.playbackRate.value)*1000 + 1500);
     currentSrc = s; s.start();
   });
 }
@@ -777,8 +807,20 @@ async function sayText(t){
     await speakBrowser(t);
   }
 }
+let lastSpoken = '', lastSpokenAt = 0;
+const words = t => (t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\[[^\]]*\]/g,' ').match(/[a-zñ0-9]+/g) || [];
+/* ¿lo que oyó el micrófono es la propia calavera? (la mayoría de las palabras coinciden con su última frase) */
+function isEcho(heard){
+  if(performance.now() - lastSpokenAt > 15000) return false;
+  const h = words(heard), said = new Set(words(lastSpoken));
+  if(!h.length || !said.size) return false;
+  const common = h.filter(w=> said.has(w)).length;
+  return h.length >= 2 ? common/h.length >= 0.6 : said.has(h[0]) && h[0].length > 3;
+}
 async function speak(text){
   setState('speaking');
+  if(rec){ try{ rec.abort(); }catch{} }          // el micrófono nunca abierto mientras habla
+  lastSpoken = text; lastSpokenAt = performance.now();
   showSub(text.replace(/\[(risa)\]/gi,'(ríe)').replace(/\[(gruñido|grunido)\]/gi,'').replace(/\s+/g,' ').trim());
   for(const s of segmentsOf(text)){
     if(s.kind==='laugh') await laugh();
@@ -788,9 +830,11 @@ async function speak(text){
 }
 /* tras hablar, espera a que se apague la cola del reverb antes de volver a escuchar */
 function afterSpeak(){
+  lastSpokenAt = performance.now();
   setState('idle');
+  // margen para la cola del reverb y el atraso de los parlantes Bluetooth
   const tail = cfg.ttsProvider==='browser' ? 0 : cfg.reverb*1800;
-  listenNotBefore = performance.now() + 700 + tail;
+  listenNotBefore = performance.now() + 1100 + tail;
   lastActivity = performance.now();
 }
 function stopSpeaking(){
@@ -896,6 +940,7 @@ function listen(){
     if(!r.isFinal) return;
     const t = r[0].transcript.trim();
     srBackoff = 0;
+    if(isEcho(t)){ dbg('eco ignorado: «'+t+'»'); return; }
     if(t.length >= 2){
       gotSpeech = true; fastFails = 0;
       lastActivity = performance.now();
@@ -904,6 +949,7 @@ function listen(){
     }
   };
   rec.onerror = e => {
+    dbg('micrófono error: '+e.error);
     const n = performance.now();
     if(e.error==='not-allowed' || e.error==='service-not-allowed'){
       showErr('Sin permiso de micrófono. Permítelo en Chrome para este sitio (requiere HTTPS).');
@@ -918,6 +964,7 @@ function listen(){
     }
   };
   rec.onend = () => {
+    dbg('micrófono cerrado ('+Math.round(performance.now()-listenStarted)+' ms)');
     if(state!=='listening') return;
     setState('idle');
     // si se apagó sola casi enseguida, esperar cada vez más antes de reintentar (evita el bucle)
@@ -925,7 +972,7 @@ function listen(){
     if(!gotSpeech && dur < 2000){ fastFails++; listenNotBefore = performance.now() + Math.min(8000, 400*2**fastFails); }
     else if(dur >= 2000) fastFails = 0;
   };
-  try{ rec.start(); listenStarted = now; setState('listening'); }
+  try{ rec.start(); listenStarted = now; setState('listening'); dbg('micrófono abierto'); }
   catch(e){ listenNotBefore = now + 2000; }
 }
 async function handle(text){
@@ -947,9 +994,15 @@ async function chatter(){
   afterSpeak();
 }
 /* vigilante: vuelve a escuchar, corta escuchas colgadas y dispara la charla espontánea */
+let synthStuckSince = 0;
 setInterval(()=>{
   if(!audioReady || settingsOpen) return;
   const now = performance.now();
+  if(state==='idle' && 'speechSynthesis' in window && speechSynthesis.speaking){
+    if(!synthStuckSince) synthStuckSince = now;
+    else if(now - synthStuckSince > 3000){ dbg('voz del navegador trabada → cancelada'); speechSynthesis.cancel(); synthStuckSince = 0; }
+  } else synthStuckSince = 0;
+  if(audioReady && ctx.state!=='running' && ctx.state!=='closed' && state!=='speaking') ctx.resume().catch(()=>{});
   if(state==='listening' && now - listenStarted > 30000){ try{ rec.abort(); }catch{} setState('idle'); }
   if((state==='idle' || state==='listening') && cfg.chatter > 0 && now - lastActivity > cfg.chatter*1000){
     lastActivity = now;
@@ -1079,7 +1132,10 @@ function boot(){
   setTimeout(checkAudio, 400);
 }
 function checkAudio(){
-  if(audioReady) return;
+  if(audioReady){                     // ya andaba: si Android lo pausó (p. ej. al abrir el micrófono), reactivarlo solo
+    if(ctx.state!=='running' && ctx.state!=='closed'){ dbg('audio '+ctx.state); setTimeout(()=> ctx.resume().catch(()=>{}), 300); }
+    return;
+  }
   if(ctx.state==='running'){
     audioReady = true;
     $('#unlock').style.display = 'none';
@@ -1306,7 +1362,7 @@ $('#subBtn').addEventListener('click', e=>{
 });
 
 document.addEventListener('change', e=>{ if(e.target && e.target.id==='f_orient') applyOrientation(); });
-const FIELDS = ['llmProvider','llmKey','llmModel','llmFallback','llmBase','persona','ttsProvider','browserVoice','ttsKey','ttsVoice','ttsModel','pitch','reverb','chatter','lang','holo','mirror','rotate','orient','size','skin'];
+const FIELDS = ['llmProvider','llmKey','llmModel','llmFallback','llmBase','persona','ttsProvider','browserVoice','ttsKey','ttsVoice','ttsModel','pitch','reverb','chatter','lang','holo','mirror','rotate','orient','size','skin','debug'];
 const NUMERIC = ['pitch','reverb','chatter','size'];
 function populateVoices(){
   const sel = $('#f_browserVoice');
