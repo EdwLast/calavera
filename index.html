@@ -281,6 +281,7 @@ textarea{min-height:120px;resize:vertical}
     <label>Proveedor
       <select id="f_ttsProvider">
         <option value="browser">Navegador (gratis, sin efectos ni reverb)</option>
+        <option value="piper">Piper (gratis, corre en el teléfono, con efectos)</option>
         <option value="gemini">Gemini TTS (usa la misma key de Gemini)</option>
         <option value="openai">OpenAI TTS</option>
         <option value="elevenlabs">ElevenLabs</option>
@@ -294,7 +295,7 @@ textarea{min-height:120px;resize:vertical}
       <label>Voz <input id="f_ttsVoice"></label>
       <label>Modelo <input id="f_ttsModel"></label>
     </div>
-    <p class="hint">Gemini: voz «Algenib» (ronca) o «Gacrux» (madura), modelo «gemini-3.8-flash-tts»; si dejas la key vacía usa la del cerebro. OpenAI: voz «onyx». ElevenLabs: pega el Voice ID de una voz grave, modelo «eleven_multilingual_v2».</p>
+    <p class="hint">Piper: en «Voz» pon es_MX-ald-medium (hombre, México), es_ES-davefx-medium (hombre, España) o es_ES-carlfm-x_low (hombre, liviana). La primera vez descarga la voz (20 a 60 MB) y mientras tanto habla con la del navegador. Gemini: voz «Algenib» (ronca) o «Gacrux» (madura), modelo «gemini-3.8-flash-tts»; si dejas la key vacía usa la del cerebro. OpenAI: voz «onyx». ElevenLabs: pega el Voice ID de una voz grave, modelo «eleven_multilingual_v2».</p>
 
     <h3>Efectos</h3>
     <label>Tono / velocidad: <span id="pitchVal"></span>
@@ -393,7 +394,7 @@ const LLM_MODEL_DEFAULT = { anthropic:'claude-haiku-5-5', openai:'gpt-4o-mini', 
 /* reglas que se agregan siempre al system prompt, aunque la personalidad esté guardada */
 const SPEECH_RULES = `Reglas de formato: nunca escribas risas ni onomatopeyas con letras (jaja, jeje, muajaja, mmm, hmm, shhh, grrr). Si querés reírte escribí exactamente [risa], y si querés gruñir o murmurar escribí exactamente [gruñido]. El sistema los convierte en sonidos. Usá como máximo uno por respuesta, y solo al principio o al final.`;
 const GEMINI_STYLE = 'Voz muy grave, lenta y ronca, con tono tenebroso y burlón, como un espectro antiguo hablando dentro de una cripta.';
-const TTS_DEFAULT = { gemini:{voice:'Algenib',model:'gemini-3.8-flash-tts'}, openai:{voice:'onyx',model:'tts-1'}, elevenlabs:{voice:'',model:'eleven_multilingual_v2'}, browser:{voice:'',model:''} };
+const TTS_DEFAULT = { piper:{voice:'es_MX-ald-medium',model:''}, gemini:{voice:'Algenib',model:'gemini-3.8-flash-tts'}, openai:{voice:'onyx',model:'tts-1'}, elevenlabs:{voice:'',model:'eleven_multilingual_v2'}, browser:{voice:'',model:''} };
 
 function loadCfg(){ try{ return {...DEFAULTS, ...JSON.parse(localStorage.getItem('calavera-cfg')||'{}')}; }catch{ return {...DEFAULTS}; } }
 function saveCfg(){ try{ localStorage.setItem('calavera-cfg', JSON.stringify(cfg)); }catch{} }
@@ -452,7 +453,9 @@ function applyMix(){
   wetG.gain.value = cfg.reverb*1.2;
 }
 async function playArrayBuffer(ab){
-  const buf = await ctx.decodeAudioData(ab);
+  return playBuffer(await ctx.decodeAudioData(ab));
+}
+function playBuffer(buf){
   return new Promise(res=>{
     const s = ctx.createBufferSource();
     s.buffer = buf; s.playbackRate.value = cfg.pitch;
@@ -614,6 +617,98 @@ function segmentsOf(text){
   if(/[a-záéíóúñü0-9]/i.test(rest)) segs.push({ kind:'text', t: rest });
   return segs;
 }
+/* ---------- Piper: voz libre que corre en el navegador ---------- */
+const PIPER = {
+  hf:     'https://huggingface.co/diffusionstudio/piper-voices/resolve/main',
+  ort:    'https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.18.0/',
+  phon:   'https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize',
+  phonJs: 'https://cdn.jsdelivr.net/npm/@diffusionstudio/vits-web@1.0.3/dist/piper-DeOu3H9E.js',
+  paths: {
+    'es_MX-ald-medium':      'es/es_MX/ald/medium/es_MX-ald-medium.onnx',
+    'es_ES-davefx-medium':   'es/es_ES/davefx/medium/es_ES-davefx-medium.onnx',
+    'es_ES-carlfm-x_low':    'es/es_ES/carlfm/x_low/es_ES-carlfm-x_low.onnx',
+    'es_ES-sharvard-medium': 'es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx',
+    'es_MX-claude-high':     'es/es_MX/claude/high/es_MX-claude-high.onnx',
+  },
+};
+const piper = { voice:null, session:null, conf:null, loading:null, phonMod:null, error:null };
+function loadScript(src){
+  return new Promise((res,rej)=>{ const sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = ()=>rej(new Error('no se pudo cargar '+src)); document.head.appendChild(sc); });
+}
+/* descarga una vez y guarda en el teléfono; las veces siguientes sale del almacenamiento local */
+async function cachedBlob(url, onProgress){
+  let c = null;
+  try{ c = await caches.open('calavera-piper-v1'); const hit = await c.match(url); if(hit) return await hit.blob(); }catch{}
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(r.status+' al descargar la voz');
+  const total = +(r.headers.get('Content-Length') || 0), reader = r.body.getReader(), parts = [];
+  let got = 0;
+  for(;;){ const { done, value } = await reader.read(); if(done) break; parts.push(value); got += value.length; onProgress && onProgress(got, total); }
+  const blob = new Blob(parts);
+  try{ c && await c.put(url, new Response(blob)); }catch{}
+  return blob;
+}
+function piperProgress(got, total){
+  const h = $('#heard'); h.classList.remove('err');
+  h.textContent = total ? `Descargando voz Piper… ${Math.round(got*100/total)} %` : `Descargando voz Piper… ${(got/1048576).toFixed(0)} MB`;
+}
+function piperLoad(voiceId){
+  if(piper.voice===voiceId && (piper.session || piper.loading)) return piper.loading || Promise.resolve();
+  const path = PIPER.paths[voiceId];
+  if(!path) return Promise.reject(new Error('voz Piper desconocida: '+voiceId));
+  piper.voice = voiceId; piper.session = null; piper.error = null;
+  piper.loading = (async ()=>{
+    if(!window.ort) await loadScript(PIPER.ort+'ort.min.js');
+    ort.env.wasm.wasmPaths = PIPER.ort;
+    ort.env.wasm.numThreads = 1;               // GitHub Pages no permite hilos compartidos
+    const conf = JSON.parse(await (await cachedBlob(`${PIPER.hf}/${path}.json`)).text());
+    const model = await cachedBlob(`${PIPER.hf}/${path}`, piperProgress);
+    const session = await ort.InferenceSession.create(await model.arrayBuffer());
+    if(piper.voice!==voiceId) return;          // se cambió de voz mientras cargaba
+    piper.conf = conf; piper.session = session;
+    await getPhonemizer().catch(()=>{});
+    const h = $('#heard'); if(/Piper/.test(h.textContent)) h.textContent = '';
+  })().catch(e=>{ piper.error = e; piper.voice = null; throw e; })
+     .finally(()=>{ piper.loading = null; });
+  return piper.loading;
+}
+/* el fonetizador se crea una sola vez (tarda ~2 s) y se reutiliza (~15 ms por frase) */
+let phonInst = null, phonCb = null, phonQueue = Promise.resolve();
+async function getPhonemizer(){
+  if(phonInst) return phonInst;
+  if(!piper.phonMod) piper.phonMod = await import(PIPER.phonJs);
+  phonInst = await piper.phonMod.createPiperPhonemize({
+    print: line=>{ const cb = phonCb; phonCb = null; cb && cb(line); },
+    printErr: line=> console.warn('piper:', line),
+    locateFile: f=> f.endsWith('.wasm') ? PIPER.phon+'.wasm' : f.endsWith('.data') ? PIPER.phon+'.data' : f,
+  });
+  return phonInst;
+}
+function piperPhonemes(text, espeakVoice){
+  const job = phonQueue.then(()=> getPhonemizer()).then(m=> new Promise((res,rej)=>{
+    const t = setTimeout(()=>{ phonCb = null; phonInst = null; rej(new Error('el fonetizador no respondió')); }, 8000);
+    phonCb = line=>{ clearTimeout(t); try{ res(JSON.parse(line).phoneme_ids); }catch(e){ rej(e); } };
+    try{ m.callMain(['-l', espeakVoice, '--input', JSON.stringify([{ text }]), '--espeak_data', '/espeak-ng-data']); }
+    catch(e){ clearTimeout(t); phonCb = null; phonInst = null; rej(e); }
+  }));
+  phonQueue = job.catch(()=>{});                  // una frase a la vez
+  return job;
+}
+/* devuelve un AudioBuffer listo para pasar por los efectos (tono, reverb, distorsión) */
+async function piperSynth(text){
+  const conf = piper.conf, ids = await piperPhonemes(text.trim(), conf.espeak.voice);
+  const feeds = {
+    input:         new ort.Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, ids.length]),
+    input_lengths: new ort.Tensor('int64', BigInt64Array.from([BigInt(ids.length)]), [1]),
+    scales:        new ort.Tensor('float32', Float32Array.from([conf.inference.noise_scale, conf.inference.length_scale, conf.inference.noise_w]), [3]),
+  };
+  if(conf.num_speakers > 1) feeds.sid = new ort.Tensor('int64', BigInt64Array.from([0n]), [1]);
+  const out = await piper.session.run(feeds);
+  const data = out.output.data, buf = ctx.createBuffer(1, data.length, conf.audio.sample_rate);
+  buf.copyToChannel(data instanceof Float32Array ? data : Float32Array.from(data), 0);
+  return buf;
+}
+
 /* caché de audios: una frase repetida (saludo, frases para llamar la atención, prueba) no vuelve a gastar cuota */
 const TTS_CACHE = 'calavera-tts-v1';
 const ttsCacheKey = t => 'https://calavera.local/tts/'+encodeURIComponent([cfg.ttsProvider, cfg.ttsModel, cfg.ttsVoice, t].join('|'));
@@ -657,6 +752,15 @@ function fmtDur(ms){
 }
 let ttsBlockedUntil = 0;
 async function sayText(t){
+  if(cfg.ttsProvider==='piper'){
+    const v = cfg.ttsVoice || TTS_DEFAULT.piper.voice;
+    if(!(piper.session && piper.voice===v)){
+      piperLoad(v).catch(e=> showErr('Voz Piper: '+e.message+' — uso la voz del navegador'));
+      return speakBrowser(t);                    // todavía descargando: no hacer esperar a nadie
+    }
+    try{ return await playBuffer(await piperSynth(t)); }
+    catch(e){ console.error(e); showErr('Voz Piper: '+e.message+' — usé la voz del navegador'); return speakBrowser(t); }
+  }
   if(cfg.ttsProvider==='browser' || performance.now() < ttsBlockedUntil) return speakBrowser(t);
   try{
     await playArrayBuffer(await getTTS(t));
@@ -1180,6 +1284,9 @@ async function applyOrientation(){
   try{ await screen.orientation?.lock?.(cfg.orient==='horizontal' ? 'landscape' : 'portrait'); }catch{}
 }
 addEventListener('resize', applyLayout);
+function warmPiper(){ if(cfg.ttsProvider==='piper') piperLoad(cfg.ttsVoice || TTS_DEFAULT.piper.voice).catch(e=> showErr('Voz Piper: '+e.message)); }
+document.addEventListener('change', e=>{ if(e.target && (e.target.id==='f_ttsProvider' || e.target.id==='f_ttsVoice')) setTimeout(warmPiper, 0); });
+setTimeout(warmPiper, 1500);
 applyLayout();
 loadSkin();
 window.addEventListener('load', ()=>{ boot(); applyOrientation(); });
