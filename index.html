@@ -30,7 +30,8 @@ body{background:radial-gradient(ellipse at 50% 40%,#1c120c 0%,#000 70%)}
 body.holo{background:#000}
 body.holo #candle, body.holo #fog, body.holo #status, body.holo #sub, body.holo #heard{display:none}
 body.holo #stage{padding:0}
-body.holo #skull{width:auto;transition:transform .3s}
+body.holo #skull{width:auto}
+#skullBox{position:relative;z-index:1;display:flex;justify-content:center;transition:transform .3s}
 #photoRig{position:relative;z-index:1;display:none;background:#000;
   -webkit-mask-image:radial-gradient(ellipse 50% 50% at 50% 50%,#000 84%,transparent 100%);
   mask-image:radial-gradient(ellipse 50% 50% at 50% 50%,#000 84%,transparent 100%)}
@@ -45,6 +46,7 @@ body.adjusting #photoRig{-webkit-mask-image:none;mask-image:none}
 .hCut{position:absolute;left:-8%;right:-8%;height:44px;transform:translateY(-50%);cursor:ns-resize}
 .hCut::after{content:"";position:absolute;left:0;right:0;top:50%;border-top:3px dashed #3f6;box-shadow:0 0 6px #3f6}
 #pHole{position:absolute;inset:0;background:#000}
+#pEyes{position:absolute;inset:0;pointer-events:none}
 #hOutline{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 #hPath{fill:rgba(60,255,100,.12);stroke:#3f6;stroke-width:2.5;stroke-dasharray:7 5}
 .hPt{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;background:rgba(60,255,100,.25);border:3px solid #3f6;box-shadow:0 0 6px #3f6;cursor:move;touch-action:none}
@@ -89,7 +91,7 @@ textarea{min-height:120px;resize:vertical}
 <div id="dbg"></div>
 
 <div id="stage">
-<svg id="skull" viewBox="0 0 400 520" role="img" aria-label="Calavera">
+<div id="skullBox"><svg id="skull" viewBox="0 0 400 520" role="img" aria-label="Calavera">
   <defs>
     <radialGradient id="boneG" cx="40%" cy="28%" r="78%">
       <stop offset="0" stop-color="#f3ead3"/><stop offset=".45" stop-color="#d9cba8"/>
@@ -216,7 +218,7 @@ textarea{min-height:120px;resize:vertical}
       <circle cx="260" cy="208" r="13" fill="url(#emberG)"/>
     </g>
   </g>
-</svg>
+</svg></div>
 <div id="photoRig">
   <div id="pBox">
     <img id="pTop" alt="">
@@ -321,6 +323,10 @@ textarea{min-height:120px;resize:vertical}
     <input id="photoFile" type="file" accept="image/*" hidden>
     <p class="hint">Las calaveras precargadas ya vienen ajustadas; con «Ajustar boca y ojos» puedes retocarlas. Para una foto propia, usa una de frente, con los dientes juntos y fondo negro. Al elegirla se abre el ajuste: marcas dónde se separa la mandíbula y dónde van los ojos. La foto se guarda en este teléfono.</p>
 
+    <label>Movimiento de cabeza
+      <select id="f_look"><option value="0">Quieta</option><option value="0.6">Suave</option><option value="1">Normal</option><option value="1.5">Inquieta</option></select>
+    </label>
+
     <h3>Holograma</h3>
     <div class="row">
       <label>Modo holograma
@@ -406,7 +412,7 @@ const DEFAULTS = {
   persona:PERSONA,
   ttsProvider:'browser', ttsKey:'', ttsVoice:'onyx', ttsModel:'tts-1',
   pitch:0.82, reverb:0.45, lang:'es-UY', chatter:45,
-  holo:'no', mirror:'no', rotate:'0', orient:'vertical', size:0.94, debug:'no',
+  holo:'no', mirror:'no', rotate:'0', orient:'vertical', size:0.94, debug:'no', look:'1',
   skin:'svg', cutY:0.7, eyeLx:0.35, eyeLy:0.43, eyeRx:0.65, eyeRy:0.43, eyeSize:0.12, jawOpen:0.07
 };
 const LLM_MODEL_DEFAULT = { anthropic:'claude-haiku-5-5', openai:'gpt-4o-mini', demo:'' };
@@ -1075,6 +1081,34 @@ function G(){
   return fillJaw(g);
 }
 let env = 0; const t0 = performance.now();
+const look = { yaw:0, pitch:0, roll:0, vy:0, vp:0, vr:0, ty:0, tp:0, tr:0, next:0, last:0 };
+const rnd = (a, b) => a + Math.random()*(b - a);
+function pickLook(now){
+  let y, p, r, hold;
+  if(state==='listening'){ y = rnd(-.15,.15); p = rnd(-.05,.1); r = (Math.random()<.5?-1:1)*rnd(.3,.6); hold = rnd(1.5,3.5); }
+  else if(state==='thinking'){ y = (Math.random()<.5?-1:1)*rnd(.35,.7); p = rnd(-.7,-.4); r = rnd(-.3,.3); hold = rnd(.8,1.6); }
+  else if(state==='speaking'){ y = rnd(-.35,.35); p = rnd(-.15,.2); r = rnd(-.25,.25); hold = rnd(.7,1.8); }
+  else if(state==='sleep'){ y = rnd(-.1,.1); p = rnd(.2,.4); r = rnd(-.2,.2); hold = rnd(3,6); }
+  else {                                           // esperando: mira alrededor
+    const big = Math.random() < .45;
+    y = big ? (Math.random()<.5?-1:1)*rnd(.6,1) : rnd(-.3,.3);
+    p = rnd(-.25,.25); r = rnd(-.35,.35); hold = big ? rnd(1.2,3) : rnd(1.5,5);
+    if(Math.random() < .12){ y = -Math.sign(look.ty || 1)*rnd(.7,1); hold = rnd(.4,.8); }   // vuelta rápida al otro lado
+  }
+  look.ty = y; look.tp = p; look.tr = r; look.next = now + hold*1000;
+}
+function stepLook(now){
+  const k = +cfg.look || 0;
+  if(adjusting || !k){ look.yaw = look.pitch = look.roll = 0; return ''; }
+  const dt = Math.min(.05, (now - (look.last || now))/1000); look.last = now;
+  if(now >= look.next) pickLook(now);
+  const spring = (cur, vel, tgt)=>{ const a = (tgt-cur)*28 - vel*9.5; vel += a*dt; return [cur + vel*dt, vel]; };
+  [look.yaw, look.vy]   = spring(look.yaw,   look.vy, look.ty);
+  [look.pitch, look.vp] = spring(look.pitch, look.vp, look.tp);
+  [look.roll, look.vr]  = spring(look.roll,  look.vr, look.tr);
+  const yaw = look.yaw*20*k, pitch = (look.pitch*9 - env*3)*k, roll = look.roll*6*k;    // grados; asiente un poco al hablar
+  return `perspective(1100px) translateX(${(look.yaw*3*k).toFixed(2)}%) rotateY(${yaw.toFixed(2)}deg) rotateX(${(-pitch).toFixed(2)}deg) rotateZ(${roll.toFixed(2)}deg)`;
+}
 function frame(now){
   const t = (now - t0)/1000;
   let target = 0;
@@ -1105,12 +1139,16 @@ function frame(now){
   eyes.setAttribute('transform', `translate(${(Math.sin(t*0.6)*5).toFixed(1)} ${(Math.sin(t*0.9)*2).toFixed(1)})`);
   head.setAttribute('transform',
     `translate(0 ${(Math.sin(t*1.1)*3).toFixed(1)}) rotate(${(Math.sin(t*0.5)*1.5 + env*2).toFixed(2)} 200 240)`);
+  const lookTf = stepLook(now), lk = +cfg.look || 0;
+  $('#skull').style.transform = lookTf;
+  eyes.setAttribute('transform', `translate(${(Math.sin(t*0.6)*5 + look.yaw*9*lk).toFixed(1)} ${(Math.sin(t*0.9)*2 + look.pitch*4*lk).toFixed(1)})`);
   if(photoOn()){
     const bh = pBox.clientHeight, open = adjusting ? ($('#aOpen').checked ? 1 : 0) : env;
     pJaw.style.transform = `translateY(${(open*G().jawOpen*bh).toFixed(1)}px)`;
     pEyes.style.opacity = adjusting ? 1 : glow.toFixed(2);
     pBox.style.transform = adjusting ? '' :
-      `translateY(${(Math.sin(t*1.1)*0.5).toFixed(2)}%) rotate(${(Math.sin(t*0.5)*1.2 + env*1.5).toFixed(2)}deg)`;
+      `${lookTf} translateY(${(Math.sin(t*1.1)*0.5).toFixed(2)}%) rotate(${(Math.sin(t*0.5)*1.2 + env*1.5).toFixed(2)}deg)`;
+    pEyes.style.transform = adjusting ? '' : `translate(${(look.yaw*2.2*lk).toFixed(2)}%, ${(look.pitch*1.2*lk).toFixed(2)}%)`;
   }
   requestAnimationFrame(frame);
 }
@@ -1167,9 +1205,9 @@ document.addEventListener('pointerdown', ()=>{
 function applyLayout(){
   const holo = cfg.holo==='si', sk = $('#skull'), photo = photoOn();
   document.body.classList.toggle('holo', holo);
-  sk.style.display = photo ? 'none' : '';
+  $('#skullBox').style.display = photo ? 'none' : '';
   photoRig.classList.toggle('on', photo);
-  const el = photo ? photoRig : sk;
+  const el = photo ? photoRig : $('#skullBox');
   // durante el ajuste la foto se muestra derecha, para poder marcar los puntos
   const rot = adjusting ? 0 : (+cfg.rotate || 0), mir = !adjusting && cfg.mirror==='si', side = rot % 180 !== 0;
   el.style.transform = `rotate(${rot}deg)` + (mir ? ' scaleX(-1)' : '');
@@ -1362,7 +1400,7 @@ $('#subBtn').addEventListener('click', e=>{
 });
 
 document.addEventListener('change', e=>{ if(e.target && e.target.id==='f_orient') applyOrientation(); });
-const FIELDS = ['llmProvider','llmKey','llmModel','llmFallback','llmBase','persona','ttsProvider','browserVoice','ttsKey','ttsVoice','ttsModel','pitch','reverb','chatter','lang','holo','mirror','rotate','orient','size','skin','debug'];
+const FIELDS = ['llmProvider','llmKey','llmModel','llmFallback','llmBase','persona','ttsProvider','browserVoice','ttsKey','ttsVoice','ttsModel','pitch','reverb','chatter','lang','holo','mirror','rotate','orient','size','skin','debug','look'];
 const NUMERIC = ['pitch','reverb','chatter','size'];
 function populateVoices(){
   const sel = $('#f_browserVoice');
