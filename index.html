@@ -345,7 +345,7 @@ textarea{min-height:120px;resize:vertical}
       </label>
     </div>
     <label>Tamaño: <span id="sizeVal"></span>
-      <input id="f_size" type="range" min="0.5" max="1" step="0.01">
+      <input id="f_size" type="range" min="0.5" max="1.5" step="0.01">
     </label>
     <p class="hint">Con el plástico a 45° la imagen se ve invertida: activa «Espejar» y, si la calavera aparece acostada o cabeza abajo, prueba con «Girar». Para fijar la orientación horizontal, abre la calavera desde el ícono instalado.</p>
 
@@ -614,6 +614,7 @@ async function fetchTTS(text, modelOverride){
 /* risa malvada sintetizada: ráfagas graves "ja-ja-ja" que pasan por el reverb y mueven la mandíbula */
 let laughT0 = 0, laughEnd = 0, growlEnd = 0;   // la mandíbula sigue la risa y el gruñido
 function laugh(){
+  if(ctx && ctx.state!=='running') ctx.resume().catch(()=>{});
   if(!ctx || ctx.state!=='running') return Promise.resolve();
   const n = 5, step = 0.2, t0 = ctx.currentTime + 0.02;
   laughT0 = performance.now() + 20; laughEnd = laughT0 + n*step*1000;
@@ -699,7 +700,10 @@ function piperLoad(voiceId){
     ort.env.wasm.numThreads = 1;               // GitHub Pages no permite hilos compartidos
     const conf = JSON.parse(await (await cachedBlob(`${PIPER.hf}/${path}.json`)).text());
     const model = await cachedBlob(`${PIPER.hf}/${path}`, piperProgress);
-    const session = await ort.InferenceSession.create(await model.arrayBuffer());
+    piper.initializing = true;
+    let session;
+    try{ session = await ort.InferenceSession.create(await model.arrayBuffer()); }
+    finally{ piper.initializing = false; }
     if(piper.voice!==voiceId) return;          // se cambió de voz mientras cargaba
     piper.conf = conf; piper.session = session;
     await getPhonemizer().catch(()=>{});
@@ -867,6 +871,14 @@ const LURES = [
   '¿Alguien quiere saber cómo termina su historia? Yo ya lo sé.',
   '[risa] Los estoy viendo.'
 ];
+/* elige una frase al azar sin repetir las últimas */
+const recentPicks = [];
+function pickFresh(list){
+  const opts = list.filter(x=> !recentPicks.includes(x));
+  const pick = (opts.length ? opts : list)[Math.floor(Math.random()*(opts.length || list.length))];
+  recentPicks.push(pick); if(recentPicks.length > 4) recentPicks.shift();
+  return pick;
+}
 function clean(t){
   return (t||'').replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/<think>[\s\S]*$/i,'')
     .replace(/[*_#`~>]/g,'')
@@ -911,7 +923,7 @@ async function askLLM(userText){
   let reply;
   if(cfg.llmProvider==='demo'){
     await sleep(900);
-    return DEMO[Math.floor(Math.random()*DEMO.length)];
+    return pickFresh(DEMO);
   }
   const msgs = [...history, { role:'user', content:userText }].slice(-10);
   if(msgs[0].role !== 'user') msgs.shift();
@@ -937,6 +949,8 @@ function listen(){
   const now = performance.now();
   if(now < listenNotBefore) return;
   if('speechSynthesis' in window && speechSynthesis.speaking) return;   // nunca escuchar mientras habla
+  if(piper.initializing) return;                 // la voz Piper se está preparando: no abrir el micrófono en ese momento
+  if(ctx && ctx.state==='running') ctx.suspend().catch(()=>{});   // el micrófono no compite con el audio
   let gotSpeech = false;
   rec = new SR();
   rec.lang = cfg.lang; rec.interimResults = false; rec.maxAlternatives = 1;
@@ -950,8 +964,9 @@ function listen(){
     if(t.length >= 2){
       gotSpeech = true; fastFails = 0;
       lastActivity = performance.now();
-      handle(t);                    // pasa a «pensando» antes de cortar el micrófono
+      state = 'thinking';           // primero se cierra el micrófono y después se reactiva el audio para responder
       try{ rec.abort(); }catch{}
+      handle(t);
     }
   };
   rec.onerror = e => {
@@ -985,6 +1000,7 @@ async function handle(text){
   setState('thinking');
   $('#heard').classList.remove('err');
   $('#heard').textContent = '« '+text+' »';
+  await ensureAudio();
   growl(1.6);
   let reply;
   try{ reply = await askLLM(text); }
@@ -994,9 +1010,11 @@ async function handle(text){
 }
 async function chatter(){
   $('#heard').textContent = '';
+  setState('speaking');
+  await ensureAudio();
   growl(1.2);
   await sleep(700);
-  await speak(LURES[Math.floor(Math.random()*LURES.length)]);
+  await speak(pickFresh(LURES));
   afterSpeak();
 }
 /* vigilante: vuelve a escuchar, corta escuchas colgadas y dispara la charla espontánea */
@@ -1008,7 +1026,6 @@ setInterval(()=>{
     if(!synthStuckSince) synthStuckSince = now;
     else if(now - synthStuckSince > 3000){ dbg('voz del navegador trabada → cancelada'); speechSynthesis.cancel(); synthStuckSince = 0; }
   } else synthStuckSince = 0;
-  if(audioReady && ctx.state!=='running' && ctx.state!=='closed' && state!=='speaking') ctx.resume().catch(()=>{});
   if(state==='listening' && now - listenStarted > 30000){ try{ rec.abort(); }catch{} setState('idle'); }
   if((state==='idle' || state==='listening') && cfg.chatter > 0 && now - lastActivity > cfg.chatter*1000){
     lastActivity = now;
@@ -1171,7 +1188,7 @@ function boot(){
 }
 function checkAudio(){
   if(audioReady){                     // ya andaba: si Android lo pausó (p. ej. al abrir el micrófono), reactivarlo solo
-    if(ctx.state!=='running' && ctx.state!=='closed'){ dbg('audio '+ctx.state); setTimeout(()=> ctx.resume().catch(()=>{}), 300); }
+    dbg('audio '+ctx.state);                    // se reactiva solo justo antes de hablar (ensureAudio)
     return;
   }
   if(ctx.state==='running'){
@@ -1183,7 +1200,8 @@ function checkAudio(){
   }
 }
 async function greet(){
-  setState('idle');
+  setState('speaking');                          // ocupada desde ya: el vigilante no abre el micrófono
+  await ensureAudio();
   growl(1.4);
   await sleep(900);
   await speak('¿Quién osa despertarme de mi sueño eterno?');
@@ -1198,7 +1216,9 @@ document.addEventListener('pointerdown', ()=>{
   if(!primed){
     primed = true;
     if('speechSynthesis' in window){ try{ speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); }catch{} }
-    try{ document.documentElement.requestFullscreen?.().then(applyOrientation).catch(()=>{}); }catch{}
+  }
+  if(!document.fullscreenElement && !settingsOpen){
+    try{ document.documentElement.requestFullscreen?.({ navigationUI:'hide' }).then(applyOrientation).catch(()=>{}); }catch{}
   }
 });
 /* ---------- holograma (fantasma de Pepper) ---------- */
@@ -1215,11 +1235,13 @@ function applyLayout(){
   // durante el ajuste, la calavera entra entera en el espacio libre arriba de la barra
   const W = innerWidth, H = innerHeight - (adjusting ? $('#adjustBar').offsetHeight + 16 : 0);
   let h = null;
-  if(holo || rot || mir){
-    const k = cfg.size || 0.94;
-    h = side ? Math.min(W*k, H*k/ar) : Math.min(H*k, W*k/ar);
-  } else if(photo){
-    h = Math.min(H*(adjusting ? 0.96 : 0.6), W*0.92/ar);
+  const k = cfg.size || 0.94;
+  if(adjusting){
+    if(photo) h = Math.min(H*0.96, W*0.92/ar);
+  } else if(holo || rot || mir){
+    h = side ? Math.min(W*k, H*k/ar) : Math.min(H*k, W*k/ar);   // por encima de 100 % la calavera puede pasar el borde
+  } else {
+    h = Math.min(H*0.66, W*0.92/ar) * (k/0.94);                // sin holograma: deja lugar a los subtítulos
   }
   if(photo){
     const bw = h*ar, bh = h/(1+G().jawOpen);
